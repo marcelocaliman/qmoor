@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileBarChart2,
+  GitCompare,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -28,6 +29,7 @@ import {
 } from '@/components/common/StatusBadge'
 import { Topbar } from '@/components/layout/Topbar'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -80,6 +82,22 @@ export function CasesListPage() {
   const [sortKey, setSortKey] = useState<SortKey>('updated_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  function toggleSelected(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else {
+        if (next.size >= 3) {
+          toast.warning('Máx 3 casos na comparação')
+          return prev
+        }
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['cases', page, debounced],
@@ -150,6 +168,18 @@ export function CasesListPage() {
 
   const actions = (
     <>
+      {selected.size >= 2 && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            navigate(`/cases/compare?ids=${Array.from(selected).join(',')}`)
+          }
+        >
+          <GitCompare className="h-4 w-4" />
+          Comparar {selected.size}
+        </Button>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -276,7 +306,8 @@ export function CasesListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[34%] cursor-pointer" onClick={() => toggleSort('name')}>
+                  <TableHead className="w-10" />
+                  <TableHead className="w-[32%] cursor-pointer" onClick={() => toggleSort('name')}>
                     Nome
                     {sortIcon('name')}
                   </TableHead>
@@ -319,6 +350,13 @@ export function CasesListPage() {
                     className="cursor-pointer"
                     onClick={() => navigate(`/cases/${row.id}`)}
                   >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(row.id)}
+                        onCheckedChange={() => toggleSelected(row.id)}
+                        aria-label={`Selecionar ${row.name} para comparação`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-medium text-foreground">{row.name}</span>
