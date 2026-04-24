@@ -106,26 +106,30 @@ def test_catenary_consistencia_inversa() -> None:
 
 
 def test_solve_tension_mode_recusa_T_fl_insuficiente() -> None:
-    """T_fl <= w·h → caso inválido (não sustenta peso)."""
-    with pytest.raises(ValueError, match="insuficiente"):
+    """T_fl <= w·h → caso inválido (linha não atinge o fairlead)."""
+    with pytest.raises(ValueError):
+        # T_fl = 4000 < w·h = 5000. O dispatch vai para touchdown, que também rejeita.
         solve_rigid_suspended(
             L=100.0, h=50.0, w=100.0,
-            mode=SolutionMode.TENSION, input_value=4000.0,  # < w·h = 5000
+            mode=SolutionMode.TENSION, input_value=4000.0,
         )
 
 
-def test_solve_tension_mode_detecta_necessidade_touchdown() -> None:
+def test_solve_tension_dispatch_para_touchdown() -> None:
     """
-    T_fl baixa o suficiente para que a solução suspensa teria s_a < 0
-    (vértice "além" da âncora). Camada 1 deve levantar ValueError — a
-    Camada 2 (seabed) é quem trata esses casos.
+    T_fl baixa o suficiente para que a solução suspensa teria s_a < 0.
+    A partir da Camada 2, solve_rigid_suspended despacha automaticamente
+    para o solver com seabed (sem quebrar nada): resultado deve ser
+    CONVERGED com L_g > 0.
     """
-    # Caso artificial: L grande demais para ser totalmente suspenso com o T_fl dado
-    with pytest.raises(ValueError, match="touchdown"):
-        solve_rigid_suspended(
-            L=1000.0, h=100.0, w=100.0,
-            mode=SolutionMode.TENSION, input_value=15000.0,
-        )
+    result = solve_rigid_suspended(
+        L=1000.0, h=100.0, w=100.0,
+        mode=SolutionMode.TENSION, input_value=15000.0,
+    )
+    assert result.status == ConvergenceStatus.CONVERGED
+    assert result.total_grounded_length > 0.0, (
+        f"Esperado touchdown (L_g > 0), obtido L_g={result.total_grounded_length}"
+    )
 
 
 def test_solve_tension_range_sao_consistentes() -> None:

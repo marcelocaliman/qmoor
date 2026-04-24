@@ -342,7 +342,13 @@ def solve_rigid_suspended(
     MBL: float = 0.0,
 ) -> SolverResult:
     """
-    Resolve catenária rígida, totalmente suspensa, nos dois modos.
+    Solver rígido (sem elasticidade), com dispatch automático entre:
+
+      - totalmente suspenso (V_anchor > 0), via este módulo; ou
+      - com touchdown no seabed (μ=0), via backend.solver.seabed.
+
+    A decisão é feita comparando o input com o valor crítico (T_fl_crit ou
+    X_crit) calculado pelas funções do módulo seabed.
 
     Parâmetros
     ----------
@@ -353,22 +359,35 @@ def solve_rigid_suspended(
     input_value : T_fl (N) se mode=Tension; X (m) se mode=Range.
     config : SolverConfig — tolerâncias e max iter.
     MBL : opcional, apenas para preencher `utilization` no resultado.
-
-    Levanta ValueError se o caso exigir touchdown ou for fisicamente
-    inválido. As camadas posteriores (seabed, friction) interceptam
-    esses casos e despacham para as formulações apropriadas.
     """
+    # import local para evitar ciclo de módulos
+    from .seabed import (
+        critical_range_for_touchdown,
+        critical_tension_for_touchdown,
+        solve_with_seabed_no_friction,
+    )
+
     if config is None:
         config = SolverConfig()
 
     if mode == SolutionMode.TENSION:
-        sol = _solve_suspended_tension_mode(L, h, w, input_value)
+        T_fl_crit = critical_tension_for_touchdown(L, h, w)
+        if input_value >= T_fl_crit:
+            sol = _solve_suspended_tension_mode(L, h, w, input_value)
+            return _build_result(sol, L, h, w, config, MBL=MBL)
+        return solve_with_seabed_no_friction(
+            L, h, w, mode, input_value, config=config, MBL=MBL,
+        )
     elif mode == SolutionMode.RANGE:
-        sol = _solve_suspended_range_mode(L, h, w, input_value, config)
+        X_crit = critical_range_for_touchdown(L, h)
+        if input_value >= X_crit:
+            sol = _solve_suspended_range_mode(L, h, w, input_value, config)
+            return _build_result(sol, L, h, w, config, MBL=MBL)
+        return solve_with_seabed_no_friction(
+            L, h, w, mode, input_value, config=config, MBL=MBL,
+        )
     else:
         raise ValueError(f"modo desconhecido: {mode}")
-
-    return _build_result(sol, L, h, w, config, MBL=MBL)
 
 
 __all__ = [
