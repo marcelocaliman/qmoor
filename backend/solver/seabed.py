@@ -328,25 +328,29 @@ def _build_touchdown_result(
 # ==============================================================================
 
 
-def solve_with_seabed_no_friction(
+def solve_with_seabed(
     L: float,
     h: float,
     w: float,
     mode: SolutionMode,
     input_value: float,
+    mu: float = 0.0,
     config: SolverConfig | None = None,
     MBL: float = 0.0,
 ) -> SolverResult:
     """
-    Resolve catenária com touchdown no seabed, SEM atrito (μ=0).
+    Resolve catenária com touchdown no seabed, com atrito de Coulomb opcional.
 
-    Esta função assume que o caso TEM touchdown. O dispatch (escolher
-    entre suspensa e touchdown) fica em solve_rigid_suspended (catenary.py).
+    Assume que o caso TEM touchdown (L_g > 0). O dispatch entre suspensa e
+    com touchdown é feito em solve_rigid_suspended (catenary.py).
+
+    O parâmetro μ (mu) não afeta a GEOMETRIA do trecho suspenso — apenas
+    redistribui tração no trecho grounded. Assim, a mesma rotina serve
+    para μ=0 (Camada 2) e μ>0 (Camada 3).
     """
     if config is None:
         config = SolverConfig()
 
-    mu = 0.0
     if mode == SolutionMode.TENSION:
         sol = _touchdown_tension_mode(L, h, w, input_value, mu)
     elif mode == SolutionMode.RANGE:
@@ -356,9 +360,26 @@ def solve_with_seabed_no_friction(
     return _build_touchdown_result(sol, L, h, w, mu, config, MBL=MBL)
 
 
+# Alias para compatibilidade: Camada 2 foi criada antes da friction.
+def solve_with_seabed_no_friction(
+    L: float,
+    h: float,
+    w: float,
+    mode: SolutionMode,
+    input_value: float,
+    config: SolverConfig | None = None,
+    MBL: float = 0.0,
+) -> SolverResult:
+    """Alias para solve_with_seabed(..., mu=0). Mantido para clareza semântica."""
+    return solve_with_seabed(
+        L, h, w, mode, input_value, mu=0.0, config=config, MBL=MBL,
+    )
+
+
 __all__ = [
     "find_touchdown",
     "critical_tension_for_touchdown",
     "critical_range_for_touchdown",
+    "solve_with_seabed",
     "solve_with_seabed_no_friction",
 ]

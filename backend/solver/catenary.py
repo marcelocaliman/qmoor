@@ -339,16 +339,18 @@ def solve_rigid_suspended(
     mode: SolutionMode,
     input_value: float,
     config: SolverConfig | None = None,
+    mu: float = 0.0,
     MBL: float = 0.0,
 ) -> SolverResult:
     """
     Solver rígido (sem elasticidade), com dispatch automático entre:
 
-      - totalmente suspenso (V_anchor > 0), via este módulo; ou
-      - com touchdown no seabed (μ=0), via backend.solver.seabed.
+      - totalmente suspenso (V_anchor > 0), via este módulo;
+      - com touchdown no seabed e atrito de Coulomb μ, via seabed.py.
 
     A decisão é feita comparando o input com o valor crítico (T_fl_crit ou
-    X_crit) calculado pelas funções do módulo seabed.
+    X_crit). O atrito μ não afeta o dispatch nem a geometria; só
+    redistribui tração no trecho grounded.
 
     Parâmetros
     ----------
@@ -358,13 +360,14 @@ def solve_rigid_suspended(
     mode : SolutionMode.TENSION ou SolutionMode.RANGE.
     input_value : T_fl (N) se mode=Tension; X (m) se mode=Range.
     config : SolverConfig — tolerâncias e max iter.
-    MBL : opcional, apenas para preencher `utilization` no resultado.
+    mu : coeficiente de atrito axial de Coulomb no seabed (default 0).
+    MBL : opcional, preenche `utilization` no resultado.
     """
     # import local para evitar ciclo de módulos
     from .seabed import (
         critical_range_for_touchdown,
         critical_tension_for_touchdown,
-        solve_with_seabed_no_friction,
+        solve_with_seabed,
     )
 
     if config is None:
@@ -375,16 +378,16 @@ def solve_rigid_suspended(
         if input_value >= T_fl_crit:
             sol = _solve_suspended_tension_mode(L, h, w, input_value)
             return _build_result(sol, L, h, w, config, MBL=MBL)
-        return solve_with_seabed_no_friction(
-            L, h, w, mode, input_value, config=config, MBL=MBL,
+        return solve_with_seabed(
+            L, h, w, mode, input_value, mu=mu, config=config, MBL=MBL,
         )
     elif mode == SolutionMode.RANGE:
         X_crit = critical_range_for_touchdown(L, h)
         if input_value >= X_crit:
             sol = _solve_suspended_range_mode(L, h, w, input_value, config)
             return _build_result(sol, L, h, w, config, MBL=MBL)
-        return solve_with_seabed_no_friction(
-            L, h, w, mode, input_value, config=config, MBL=MBL,
+        return solve_with_seabed(
+            L, h, w, mode, input_value, mu=mu, config=config, MBL=MBL,
         )
     else:
         raise ValueError(f"modo desconhecido: {mode}")
