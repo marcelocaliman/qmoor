@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.api.db import session as db_session_module
+from backend.api.db.migrations import run_migrations
 from backend.api.main import app
 
 
@@ -30,6 +31,11 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     monkeypatch.setattr(db_session_module, "engine", engine)
     monkeypatch.setattr(db_session_module, "SessionLocal", SessionLocal)
     monkeypatch.setattr(db_session_module, "DB_PATH", db_path)
+
+    # Aplica migrations no banco temporário (cria cases/executions/app_config).
+    # line_types não é criada aqui — testes que precisam do catálogo devem
+    # usar a fixture `seeded_catalog` (a ser adicionada em F2.5).
+    run_migrations(engine)
 
     yield db_path
 

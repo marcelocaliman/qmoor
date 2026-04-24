@@ -13,6 +13,8 @@ Como rodar testes:
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from backend.api.db import session as db_session
+from backend.api.db.migrations import run_migrations
 from backend.api.routers import health
 from backend.api.schemas.errors import ErrorDetail, ErrorResponse
 
@@ -28,6 +32,20 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """
+    Lifespan: startup aplica migrations idempotentemente; shutdown
+    apenas registra. A tabela line_types do seed F1a é preservada.
+    """
+    del app
+    created = run_migrations(db_session.engine)
+    if created:
+        logger.info("Tabelas criadas no startup: %s", created)
+    yield
+    logger.debug("Shutdown da API.")
 
 
 def _create_app() -> FastAPI:
@@ -47,6 +65,7 @@ def _create_app() -> FastAPI:
         docs_url="/api/v1/docs",
         redoc_url="/api/v1/redoc",
         openapi_url="/api/v1/openapi.json",
+        lifespan=_lifespan,
     )
 
     # CORS restrito a localhost (Vite dev server e acesso direto).
@@ -65,7 +84,6 @@ def _create_app() -> FastAPI:
 
     _register_exception_handlers(app)
     _register_routers(app)
-
     return app
 
 
