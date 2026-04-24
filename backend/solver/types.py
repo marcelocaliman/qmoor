@@ -11,7 +11,7 @@ Referências:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -136,6 +136,9 @@ def classify_utilization(
     return AlertLevel.OK
 
 
+LineCategory = Literal["Wire", "StuddedChain", "StudlessChain", "Polyester"]
+
+
 class LineSegment(BaseModel):
     """
     Segmento homogêneo de linha de ancoragem.
@@ -143,6 +146,11 @@ class LineSegment(BaseModel):
     Grandezas em SI: comprimento em m, peso em N/m, EA e MBL em N.
     MVP v2 suporta uma única linha, portanto um único segmento.
     Multi-segmento fica para v2.1 (conforme Seção 9 do Documento A).
+
+    Campos opcionais `category` e `line_type` refletem Seção 5.1 do MVP v2
+    PDF e Seção 4.2 do Documento A; servem para rastreabilidade e para
+    escolher defaults de atrito na Seção 4.4 quando o solo é conhecido.
+    Não afetam o cálculo do solver.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -151,6 +159,13 @@ class LineSegment(BaseModel):
     w: float = Field(..., description="Peso submerso por unidade de comprimento (N/m)")
     EA: float = Field(..., description="Rigidez axial do segmento (N)")
     MBL: float = Field(..., description="Minimum Breaking Load (N)")
+    category: Optional[LineCategory] = Field(
+        default=None, description="Wire, StuddedChain, StudlessChain ou Polyester"
+    )
+    line_type: Optional[str] = Field(
+        default=None,
+        description="Identificador no catálogo (ex.: 'IWRCEIPS', 'R4Studless')",
+    )
 
     @field_validator("length", "EA", "MBL")
     @classmethod
@@ -286,6 +301,7 @@ __all__ = [
     "BoundaryConditions",
     "ConvergenceStatus",
     "CriteriaProfile",
+    "LineCategory",
     "LineSegment",
     "PROFILE_LIMITS",
     "SeabedConfig",
