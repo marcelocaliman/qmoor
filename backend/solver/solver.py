@@ -63,6 +63,19 @@ def _validate_inputs(
     # Validações específicas por modo (Seção 8 do MVP v2 PDF):
     if boundary.mode not in (SolutionMode.TENSION, SolutionMode.RANGE):
         raise ValueError(f"modo inválido: {boundary.mode}")
+    # Restrições de geometria do MVP v1: âncora no seabed, fairlead na superfície.
+    if not boundary.endpoint_grounded:
+        raise NotImplementedError(
+            "endpoint_grounded=False (âncora elevada do seabed) não é suportado "
+            "no MVP v1. Planejado para v2+. Forneça endpoint_grounded=True ou "
+            "aguarde a versão futura."
+        )
+    if boundary.startpoint_depth > 0:
+        raise NotImplementedError(
+            f"startpoint_depth={boundary.startpoint_depth:.2f} m > 0: fairlead "
+            "afundado abaixo da superfície não é suportado no MVP v1. Planejado "
+            "para v2+ (junto com batimetria variável)."
+        )
     return segment
 
 

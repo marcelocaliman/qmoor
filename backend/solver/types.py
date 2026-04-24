@@ -191,6 +191,13 @@ class BoundaryConditions(BaseModel):
     h é a distância vertical da âncora até o fairlead (positiva = fairlead
     acima da âncora). No modelo de fundo plano, h coincide com a lâmina
     d'água se a âncora está no seabed.
+
+    Campos `startpoint_depth` e `endpoint_grounded` refletem Seção 5.1 do
+    MVP v2 PDF. O MVP v1 assume:
+      - fairlead (startpoint) na superfície → startpoint_depth = 0
+      - âncora (endpoint) no seabed         → endpoint_grounded = True
+    Valores diferentes são validados pelo facade solve() e geram INVALID_CASE
+    com mensagem clara. Suporte para âncora elevada fica para v2+.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -199,6 +206,14 @@ class BoundaryConditions(BaseModel):
     mode: SolutionMode
     input_value: float = Field(
         ..., description="T_fl (N) se mode=Tension; X_total (m) se mode=Range"
+    )
+    startpoint_depth: float = Field(
+        default=0.0, ge=0.0,
+        description="Profundidade do fairlead abaixo da superfície (m). MVP v1: sempre 0.",
+    )
+    endpoint_grounded: bool = Field(
+        default=True,
+        description="Se True, âncora está no seabed. MVP v1 exige True.",
     )
 
     @field_validator("h", "input_value")
