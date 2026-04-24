@@ -24,7 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.db import session as db_session
 from backend.api.db.migrations import run_migrations
-from backend.api.routers import health
+from backend.api.routers import cases, health
 from backend.api.schemas.errors import ErrorDetail, ErrorResponse
 
 logger = logging.getLogger("qmoor.api")
@@ -90,6 +90,7 @@ def _create_app() -> FastAPI:
 def _register_routers(app: FastAPI) -> None:
     """Monta todos os routers da API sob /api/v1/."""
     app.include_router(health.router, prefix="/api/v1")
+    app.include_router(cases.router, prefix="/api/v1")
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -103,15 +104,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        """Pydantic validation → 422 padronizado."""
+        """Pydantic validation → 422 padronizado.
+
+        Pydantic 2 coloca a exceção original em `ctx.error` (não-serializável
+        para JSON). Convertemos tudo a string antes de devolver ao cliente.
+        """
         del request
+        safe_errors = []
+        for err in exc.errors():
+            safe_err = {k: v for k, v in err.items() if k != "ctx"}
+            ctx = err.get("ctx")
+            if isinstance(ctx, dict):
+                safe_err["ctx"] = {k: str(v) for k, v in ctx.items()}
+            safe_errors.append(safe_err)
         return JSONResponse(
             status_code=422,
             content=ErrorResponse(
                 error=ErrorDetail(
                     code="validation_error",
                     message="Entrada inválida. Verifique os campos obrigatórios e os tipos.",
-                    detail={"errors": exc.errors()},
+                    detail={"errors": safe_errors},
                 )
             ).model_dump(),
         )
