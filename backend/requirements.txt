@@ -9,3 +9,4 @@ pandas
 sqlalchemy
 pytest
 python-multipart
+moorpy
