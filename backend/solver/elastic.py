@@ -124,10 +124,14 @@ def solve_elastic_iterative(
         # Tensão: sem limite superior rígido; usamos 100×L como teto seguro.
         L_hi_cap = L * 100.0
 
-    # Verifica se L_lo é viável geometricamente
+    # Verifica se L_lo é viável geometricamente. _cache guarda o último
+    # resultado bem-sucedido; _call_count conta quantas avaliações de F
+    # ocorreram (incluindo expansão de bracket e iterações do brentq).
     _cache: dict = {"L_eff": None, "result": None, "T_mean": None}
+    _call_count: list[int] = [0]
 
     def F(L_eff: float) -> float:
+        _call_count[0] += 1
         r = _solve_rigid_for_elastic(
             L_eff, h=h, w=w, mode=mode, input_value=input_value,
             mu=mu, config=config, MBL=MBL,
@@ -182,9 +186,9 @@ def solve_elastic_iterative(
     rigid_result = _cache["result"]
     assert rigid_result is not None
 
-    # Conta iterações efetivas via contador: brentq tipicamente ~5-20 chamadas
-    # de F. Não é fácil recuperar exato, então usamos um inteiro aproximado.
-    iters_est = 1  # pelo menos uma avaliação
+    # iterations_used = nº de avaliações de F durante expansão de bracket
+    # + brentq + eventuais re-avaliações. Reflete o custo real do solver.
+    iters = _call_count[0]
 
     return SolverResult(
         **{
@@ -193,7 +197,7 @@ def solve_elastic_iterative(
             "unstretched_length": L,
             "stretched_length": L_eff_final,
             "elongation": L_eff_final - L,
-            "iterations_used": iters_est,
+            "iterations_used": iters,
             "message": (
                 f"Catenária elástica convergida (L_stretched={L_eff_final:.3f} m, "
                 f"elongação {(L_eff_final - L) / L * 100:.2f}%)."
