@@ -17,12 +17,23 @@ Este é um projeto de aplicação web pessoal para análise estática de linhas 
 ## Estado atual
 
 - ✅ F0 — Setup do ambiente (concluído)
-- ⏳ F1a — Importação do catálogo QMoor para SQLite (próximo passo)
-- ⬜ F1b — Implementação do solver
-- ⬜ F2 — API FastAPI
+- ✅ F1a — Importação do catálogo QMoor para SQLite (concluída, 522 entradas)
+- ✅ F1b — Implementação do solver (concluída, 45 testes, 96% cobertura, BC-01..09 validados contra MoorPy)
+- ⏳ F2 — API FastAPI (próximo passo; ver `docs/plano_F2_api.md`)
 - ⬜ F3 — Frontend React
 - ⬜ F4 — Calibração com MoorPy
 - ⬜ F5 — Polimento e exportações
+
+### Documentação de referência (ordem de leitura recomendada)
+
+1. **Este arquivo** (CLAUDE.md) — briefing + decisões fechadas.
+2. [`docs/Documento_A_Especificacao_Tecnica_v2_2.docx`](docs/Documento_A_Especificacao_Tecnica_v2_2.docx) — especificação técnica canônica do domínio.
+3. [`docs/plano_F2_api.md`](docs/plano_F2_api.md) — desenho da API (schemas SQL, request/response, erros).
+4. [`docs/relatorio_F1b.md`](docs/relatorio_F1b.md) — estado e validações do solver.
+5. [`docs/auditoria_estrategica_pre_F2.md`](docs/auditoria_estrategica_pre_F2.md) — auditoria pré-F2 (contexto de decisões tomadas).
+6. [`docs/Documento_B_Checklist_Revisor-RESPONDIDO.docx`](docs/Documento_B_Checklist_Revisor-RESPONDIDO.docx) — respostas do engenheiro revisor.
+
+Em caso de conflito entre docs: o **Documento A v2.2** é canônico para domínio; este CLAUDE.md registra qualquer override com justificativa (ver seções "Decisões de projeto").
 
 ## Decisões de projeto — Fase 1a (catálogo)
 
@@ -54,6 +65,44 @@ Tomadas após inspeção de `docs/QMoor_database_inventory.xlsx` (522 entradas, 
 ### Limpeza do xlsx
 - Colunas fantasma do Excel (índices 17–26 sem cabeçalho) são descartadas.
 - `comments`, `manufacturer`, `serial_number` estão 100% NULL no catálogo legado; importadas como NULL.
+
+## Decisões de projeto — Fase 1b (solver)
+
+Tomadas durante F1b para resolver situações onde a Seção 3 do Documento A v2.2 era ambígua ou insuficiente. **Todas validadas por benchmarks contra MoorPy** (9/9 BCs dentro das tolerâncias).
+
+### Catenária na forma geral (âncora pode ter V_anchor > 0)
+A Seção 3.3.1 do Documento A apresenta equações assumindo âncora no vértice (V_anchor=0). Isso é um caso particular. O BC-01 (T_fl=785 kN) exige V_anchor > 0 — linha quase taut, anchor pull-up acentuado. O solver implementa a **forma geral** parametrizada por `s_a ≥ 0` (arc length do vértice virtual ao anchor), cobrindo tanto V_anchor=0 (touchdown iminente) quanto V_anchor > 0 (fully suspended típico). Ver docstring de [backend/solver/catenary.py](backend/solver/catenary.py).
+
+### Loop elástico via brentq (não ponto-fixo)
+A iteração ingênua `L_{n+1} = L·(1 + T̄(L_n)/EA)` **diverge por oscilação** em casos de linha muito taut (L_stretched próximo de √(X²+h²)), notadamente BC-05. Substituído por `scipy.optimize.brentq` sobre `F(L_eff) = L_eff − L·(1+T̄/EA) = 0`, com bracket explícito em limites físicos. Robusto em todos os 45 testes. Ver [backend/solver/elastic.py](backend/solver/elastic.py).
+
+### BCs redefinidos (liberdade da Seção 6.2)
+A Seção 6.2 do Documento A listava BC-02/07/08/09 com "entradas a definir". Além disso, **BC-04 e BC-05 com os parâmetros do Documento A são fully suspended, não touchdown** (T_fl_crit ≈ 426 kN < T_fl=1471 kN → sem grounded segment). Rótulo "com touchdown" do BC-04/05 é incorreto. Para ter touchdown real, BC-02/08/09 foram redefinidos com h=300, L=700, T_fl=150 kN, wire rope 3" (T_fl_crit ≈ 194 kN → touchdown garantido). BC-07 com h=100, L=2000, T_fl=30 kN para grande grounded. Documentação detalhada em [docs/relatorio_F1b.md](docs/relatorio_F1b.md) e docstrings dos testes.
+
+### Fallback de bisseção NÃO implementado (divergência vs Documento A)
+A Seção 3.5.1 do Documento A menciona "Fallback: bisseção pura se Brent não convergir em 50 iterações" e `SolverConfig.max_bisection_iter=200`. O código usa **apenas brentq** (que internamente já é um método híbrido Brent-Dekker com fallback de bisseção nativo). Como brentq nunca falhou em nenhum dos 45 testes, o fallback manual seria redundante. `max_bisection_iter` foi removido do schema.
+
+### Documento A será atualizado (v2.3 planejada)
+As 3 decisões acima serão propagadas para uma versão futura do Documento A. Até lá, este CLAUDE.md é a fonte autoritativa.
+
+## Decisões de projeto — Fase 2 (API e persistência)
+
+Estabelecidas durante a auditoria estratégica pré-F2. Detalhes em [docs/plano_F2_api.md](docs/plano_F2_api.md).
+
+### Autenticação: zero
+Aplicação local (localhost). Firewall do macOS protege. Nada de tokens, cookies, basic auth. Se o projeto virar multiusuário, revisitar.
+
+### Formato `.moor` = JSON próprio QMoor-Web
+O `.moor` original do QMoor 0.8.5 estava em binário proprietário (`.pyd` do módulo `cppmoor`). Impossível replicar. `.moor` exportado daqui é JSON com schema compatível com a Seção 5.2 do MVP v2 PDF.
+
+### Persistência de execuções
+Cada chamada de solve persiste um `execution_record` com timestamp. **Mantém-se as últimas 10 execuções por caso**; mais antigas são truncadas.
+
+### Âncora sempre no seabed (v1)
+MVP v1 **rejeita** `endpointGrounded=false` com INVALID_CASE + mensagem. Casos com anchor elevado ficam para v2+.
+
+### Critérios de utilização: 4 perfis disponíveis desde v1
+Conforme Seção 5 do Documento A: `MVP_Preliminary` (default, 0.60 MBL), `API_RP_2SK` (intacto 0.60 / danificado 0.80), `DNV` (placeholder; formal só em v3+ com análise dinâmica), `UserDefined`. `SolverResult` retorna `alert_level: ok | yellow | red | broken`.
 
 ## Convenções de código
 
