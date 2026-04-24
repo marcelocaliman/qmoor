@@ -97,9 +97,6 @@ class SeabedConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mu: float = Field(default=0.0, ge=0.0, description="Coeficiente de atrito axial")
-    depth: float = Field(
-        default=0.0, ge=0.0, description="Profundidade do seabed (m). 0 = âncora no seabed."
-    )
 
 
 class SolverConfig(BaseModel):
@@ -118,8 +115,12 @@ class SolverConfig(BaseModel):
     elastic_tolerance: float = Field(default=1e-5, gt=0, description="Tolerância loop elástico")
     max_brent_iter: int = Field(default=100, gt=0)
     max_elastic_iter: int = Field(default=30, gt=0)
-    max_bisection_iter: int = Field(default=200, gt=0)
     n_plot_points: int = Field(default=101, ge=3, description="Pontos discretos da geometria")
+    # Obs.: a Seção 3.5.1 do Documento A v2.2 mencionava um fallback manual
+    # de bisseção (`max_bisection_iter`). Como scipy.optimize.brentq já é
+    # um método híbrido Brent-Dekker com fallback de bisseção nativo e
+    # nunca falhou nos 45 testes da F1b, o campo foi removido. Decisão
+    # registrada em CLAUDE.md seção "Fallback de bisseção NÃO implementado".
 
 
 class SolverResult(BaseModel):

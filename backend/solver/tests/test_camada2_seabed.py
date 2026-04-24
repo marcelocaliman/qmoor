@@ -39,7 +39,7 @@ LBF_FT_TO_N_M = 14.593903
 
 def test_find_touchdown_identidades_hiperbolicas() -> None:
     """Para h=0: X_s = 0, L_s = 0."""
-    X_s, L_s = find_touchdown(a=100.0, w=1.0, h=0.0)
+    X_s, L_s = find_touchdown(a=100.0, h=0.0)
     assert X_s == pytest.approx(0.0)
     assert L_s == pytest.approx(0.0)
 
@@ -51,7 +51,7 @@ def test_find_touchdown_consistencia_com_helpers_camada1() -> None:
     """
     a = 200.0
     h = 300.0
-    X_s, L_s = find_touchdown(a=a, w=1.0, h=h)
+    X_s, L_s = find_touchdown(a=a, h=h)
     # Verifica h: a·(cosh(X_s/a)−1) == h
     h_rec = a * (math.cosh(X_s / a) - 1.0)
     assert h_rec == pytest.approx(h, rel=1e-9)

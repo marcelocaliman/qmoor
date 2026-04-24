@@ -15,6 +15,7 @@ fica para v2.1 conforme Seção 9 do Documento A v2.2.
 """
 from __future__ import annotations
 
+import math
 from typing import Sequence
 
 from .elastic import solve_elastic_iterative
@@ -124,8 +125,6 @@ def solve(
 
     # Pós-classificação (Camada 7): detecta casos ill-conditioned onde o
     # solver convergiu mas o resultado é sensível a pequenas variações.
-    import math
-
     if result.status == ConvergenceStatus.CONVERGED:
         # Check 1: linha rompida (T_fl > MBL). Matemáticamente converge,
         # mas é um caso engenheiramente inválido (Seção 5 do Documento A).

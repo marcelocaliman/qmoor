@@ -40,7 +40,7 @@ from .types import (
 # ==============================================================================
 
 
-def find_touchdown(a: float, w: float, h: float) -> Tuple[float, float]:
+def find_touchdown(a: float, h: float) -> Tuple[float, float]:
     """
     Dado o parâmetro catenário a e a altura h da fairlead acima do
     touchdown, retorna (X_s, L_s) do trecho suspenso:
@@ -48,10 +48,8 @@ def find_touchdown(a: float, w: float, h: float) -> Tuple[float, float]:
       X_s = a · acosh(1 + h/a)       (horizontal entre touchdown e fairlead)
       L_s = a · sinh(X_s/a)          (comprimento de arco do trecho suspenso)
 
-    Parâmetro `w` é aceito por consistência de assinatura com o resto do
-    pacote (não é usado diretamente aqui — a relação é puramente geométrica).
+    A relação é puramente geométrica — não depende do peso w.
     """
-    del w  # não utilizado: assinatura por uniformidade
     if a <= 0:
         raise ValueError("a deve ser > 0")
     if h < 0:
@@ -111,7 +109,7 @@ def _touchdown_tension_mode(L: float, h: float, w: float, T_fl: float, mu: float
             f"T_fl={T_fl:.1f} N <= w·h={w * h:.1f} N: linha não atinge fairlead"
         )
     a = H / w
-    X_s, L_s = find_touchdown(a, w, h)
+    X_s, L_s = find_touchdown(a, h)
     L_g = L - L_s
     if L_g < -1e-6:
         raise ValueError(
