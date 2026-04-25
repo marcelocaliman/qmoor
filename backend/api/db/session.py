@@ -1,41 +1,32 @@
 """
 Sessão SQLAlchemy para o banco SQLite da AncoPlat.
 
-Usa o mesmo arquivo de banco que o seed_catalog.py (backend/data/ancoplat.db).
-Se o banco ainda não existir, a primeira execução do servidor cria o
-arquivo vazio e chama as migrations iniciais.
+DATABASE_URL e DB_PATH vêm de `backend.api.config` (env-driven).
+Default em dev: backend/data/ancoplat.db.
 
-Migração transparente: se um banco antigo `qmoor.db` existir e
-`ancoplat.db` ainda não, renomeia automaticamente preservando dados
-locais do usuário sem exigir intervenção manual.
+Migração transparente: se um banco antigo `qmoor.db` existir ao lado do
+`ancoplat.db` esperado e o novo ainda não, renomeia automaticamente
+preservando dados locais do usuário sem exigir intervenção manual.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-# Mesma pasta do seed_catalog.py
-_ROOT = Path(__file__).resolve().parents[3]
-_DATA_DIR = _ROOT / "backend" / "data"
-DB_PATH = _DATA_DIR / "ancoplat.db"
-# Compat: se DB legado `qmoor.db` existir e o novo `ancoplat.db` ainda
-# não, renomeia automaticamente. Usuários existentes não perdem dados.
-_LEGACY_DB = _DATA_DIR / "qmoor.db"
+from backend.api.config import DATABASE_URL, DB_PATH
+
+# Compat: se DB legado `qmoor.db` existir ao lado do alvo e o novo
+# `ancoplat.db` ainda não, renomeia automaticamente.
+_LEGACY_DB = DB_PATH.parent / "qmoor.db"
 if _LEGACY_DB.exists() and not DB_PATH.exists():
     try:
         _LEGACY_DB.rename(DB_PATH)
     except OSError:
-        # Se rename falhar (permissions, etc), continua e o usuário
-        # pode renomear manualmente. Não trava o startup.
+        # Rename pode falhar por permissions; não trava o startup.
         pass
-
-# check_same_thread=False é necessário para uso concorrente do FastAPI com SQLite.
-# SQLite é rápido o suficiente para app local; não há contention real.
-DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
     DATABASE_URL,

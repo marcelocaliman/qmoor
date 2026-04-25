@@ -19,9 +19,8 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-from backend.api.db.session import DB_PATH
+from backend.api.config import LOG_FILE, LOG_LEVEL
 
 _CONFIGURED = False
 
@@ -32,9 +31,8 @@ def configure_logging() -> None:
     if _CONFIGURED:
         return
 
-    log_dir = Path(DB_PATH).parent / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "ancoplat.log"
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    level = getattr(logging, LOG_LEVEL, logging.INFO)
 
     fmt = logging.Formatter(
         fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -42,25 +40,25 @@ def configure_logging() -> None:
     )
 
     root = logging.getLogger("ancoplat")
-    root.setLevel(logging.INFO)
+    root.setLevel(level)
     # Limpa handlers herdados (evita duplicação em testes/reload).
     root.handlers.clear()
     root.propagate = False  # não escapa para o root global
 
     # Console
     stream = logging.StreamHandler()
-    stream.setLevel(logging.INFO)
+    stream.setLevel(level)
     stream.setFormatter(fmt)
     root.addHandler(stream)
 
     # Arquivo rotativo: 1 MB × 5 arquivos
     rotating = RotatingFileHandler(
-        log_file,
+        LOG_FILE,
         maxBytes=1_048_576,
         backupCount=5,
         encoding="utf-8",
     )
-    rotating.setLevel(logging.INFO)
+    rotating.setLevel(level)
     rotating.setFormatter(fmt)
     root.addHandler(rotating)
 

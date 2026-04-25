@@ -26,6 +26,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from backend.api.config import CORS_ALLOWED_ORIGINS
 from backend.api.db import session as db_session
 from backend.api.db.migrations import run_migrations
 from backend.api.logging_config import configure_logging
@@ -141,18 +142,13 @@ def _create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    # CORS restrito a localhost (Vite dev server e acesso direto).
+    # CORS: lista vinda de config (env-driven). Default = localhost dev.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-        ],
+        allow_origins=CORS_ALLOWED_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
     # Rate limit middleware: aplica o `default_limits` do `limiter` em todas
