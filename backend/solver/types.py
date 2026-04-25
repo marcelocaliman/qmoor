@@ -278,11 +278,30 @@ class BoundaryConditions(BaseModel):
 
 
 class SeabedConfig(BaseModel):
-    """Configuração do seabed (assumido plano e horizontal no MVP v1)."""
+    """
+    Configuração do seabed.
+
+    Por padrão é horizontal (slope_rad = 0). F5.3 adiciona suporte a
+    inclinação constante: o seabed é uma reta passando pelo anchor com
+    inclinação `slope_rad` em relação à horizontal. Convenção:
+      - slope_rad > 0: seabed sobe em direção ao fairlead (anchor mais
+        profundo que o ponto sob o fairlead).
+      - slope_rad < 0: seabed desce em direção ao fairlead.
+    Range admitido: ±π/4 (≈ ±45°).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     mu: float = Field(default=0.0, ge=0.0, description="Coeficiente de atrito axial")
+    slope_rad: float = Field(
+        default=0.0,
+        ge=-0.7854,  # -π/4
+        le=0.7854,
+        description=(
+            "Inclinação do seabed em radianos (range ±π/4). "
+            "Positivo = sobe na direção do fairlead. F5.3."
+        ),
+    )
 
 
 class SolverConfig(BaseModel):
