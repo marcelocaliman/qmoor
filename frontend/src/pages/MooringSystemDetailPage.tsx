@@ -6,14 +6,17 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Compass,
   Download,
   Edit3,
   FileText,
   Loader2,
   Minus,
+  RotateCcw,
+  Wind,
   Zap,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/client'
@@ -21,9 +24,15 @@ import {
   exportMooringSystemJsonUrl,
   exportMooringSystemPdfUrl,
   getMooringSystem,
+  solveEquilibrium,
   solveMooringSystem,
 } from '@/api/endpoints'
-import type { MooringSystemResult } from '@/api/types'
+import type {
+  MooringSystemResult,
+  PlatformEquilibriumResult,
+} from '@/api/types'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { MooringSystemPlanView } from '@/components/common/MooringSystemPlanView'
 import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/badge'
@@ -70,6 +79,48 @@ export function MooringSystemDetailPage() {
       toast.error('Falha ao resolver', { description: msg })
     },
   })
+
+  // F5.5 — Equilíbrio de plataforma sob carga ambiental.
+  // Inputs em kN para usabilidade; convertemos para N só ao chamar a API.
+  const [envFxKn, setEnvFxKn] = useState<number>(0)
+  const [envFyKn, setEnvFyKn] = useState<number>(0)
+  const [equilibrium, setEquilibrium] = useState<
+    PlatformEquilibriumResult | null
+  >(null)
+
+  const equilibriumMutation = useMutation({
+    mutationFn: () =>
+      solveEquilibrium(msysId, {
+        Fx: envFxKn * 1000,
+        Fy: envFyKn * 1000,
+      }),
+    onSuccess: (res) => {
+      setEquilibrium(res)
+      if (res.converged) {
+        toast.success(
+          `Equilíbrio em ${res.offset_magnitude.toFixed(2)} m @ ` +
+            `${res.offset_azimuth_deg.toFixed(1)}°`,
+          {
+            description: `${res.iterations} iterações · resíduo ${res.residual_magnitude.toFixed(1)} N`,
+          },
+        )
+      } else {
+        toast.warning('Equilíbrio não convergiu plenamente.', {
+          description: res.message,
+        })
+      }
+    },
+    onError: (err) => {
+      const msg = err instanceof ApiError ? err.message : String(err)
+      toast.error('Falha no equilíbrio', { description: msg })
+    },
+  })
+
+  function resetEquilibrium() {
+    setEnvFxKn(0)
+    setEnvFyKn(0)
+    setEquilibrium(null)
+  }
 
   const breadcrumbs = [
     { label: 'Sistemas', to: '/mooring-systems' },
@@ -167,6 +218,7 @@ export function MooringSystemDetailPage() {
                 result={latestResult}
                 platformRadius={data.input.platform_radius}
                 previewLines={previewLines}
+                equilibrium={equilibrium ?? undefined}
               />
             </CardContent>
           </Card>
@@ -253,6 +305,88 @@ export function MooringSystemDetailPage() {
               })}
             </TableBody>
           </Table>
+        </Card>
+
+        {/* F5.5 — Equilíbrio de plataforma sob carga ambiental */}
+        <Card className="mt-4 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-4 py-2">
+            <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <Wind className="h-3 w-3" />
+              Equilíbrio sob carga ambiental
+            </span>
+            {equilibrium && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetEquilibrium}
+                className="h-7 gap-1 text-[11px]"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Resetar
+              </Button>
+            )}
+          </div>
+          <CardContent className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[1fr_1fr]">
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Aplique uma carga horizontal sobre a plataforma (vento +
+                corrente + onda média). O solver acha o offset (Δx, Δy)
+                tal que a soma das forças restauradoras das linhas
+                cancele a carga.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    F<sub>x</sub> (kN) — proa positivo
+                  </Label>
+                  <Input
+                    type="number"
+                    step="5"
+                    value={envFxKn}
+                    onChange={(e) => setEnvFxKn(Number(e.target.value) || 0)}
+                    className="h-8 font-mono"
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    F<sub>y</sub> (kN) — bombordo positivo
+                  </Label>
+                  <Input
+                    type="number"
+                    step="5"
+                    value={envFyKn}
+                    onChange={(e) => setEnvFyKn(Number(e.target.value) || 0)}
+                    className="h-8 font-mono"
+                  />
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => equilibriumMutation.mutate()}
+                disabled={equilibriumMutation.isPending}
+                className="w-full"
+              >
+                {equilibriumMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Compass className="h-4 w-4" />
+                )}
+                Calcular equilíbrio
+              </Button>
+            </div>
+
+            <div className="border-l border-border/40 pl-4">
+              {equilibrium ? (
+                <EquilibriumResultPanel result={equilibrium} />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Nenhum equilíbrio calculado ainda. Defina F<sub>x</sub> e
+                  F<sub>y</sub> e clique em <strong>Calcular</strong>. O
+                  plan view mostrará a plataforma na posição deslocada.
+                </p>
+              )}
+            </div>
+          </CardContent>
         </Card>
 
         {/* Execution history */}
@@ -503,3 +637,65 @@ function AlertChip({ level }: { level: string | null | undefined }) {
 
 // Suppress unused import warning since fmtNumber is referenced in helpers.
 void fmtNumber
+
+/**
+ * F5.5 — Painel compacto de resultado do equilíbrio: offset, resíduo,
+ * iterações + mini-tabela com tração e Δ% por linha vs baseline.
+ */
+function EquilibriumResultPanel({
+  result,
+}: {
+  result: PlatformEquilibriumResult
+}) {
+  return (
+    <div className="space-y-2 font-mono text-xs">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Offset</span>
+        <span className="font-medium">
+          {result.offset_magnitude.toFixed(2)} m @{' '}
+          {result.offset_magnitude > 0.01
+            ? `${result.offset_azimuth_deg.toFixed(1)}°`
+            : '—'}
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Δx, Δy</span>
+        <span className="font-medium">
+          {result.offset_xy[0].toFixed(2)},{' '}
+          {result.offset_xy[1].toFixed(2)} m
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Resíduo</span>
+        <span
+          className={`font-medium ${
+            result.converged ? 'text-success' : 'text-warning'
+          }`}
+        >
+          {result.residual_magnitude.toFixed(1)} N
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Iterações</span>
+        <span className="font-medium">{result.iterations}</span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Convergidas</span>
+        <span className="font-medium">
+          {result.n_converged} / {result.lines.length}
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Máx. utilização</span>
+        <span className="font-medium">
+          {fmtPercent(result.max_utilization, 1)}
+        </span>
+      </div>
+      {result.message && (
+        <p className="border-t border-border/40 pt-2 text-[10px] text-muted-foreground">
+          {result.message}
+        </p>
+      )}
+    </div>
+  )
+}

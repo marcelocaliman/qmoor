@@ -39,6 +39,10 @@ export type SystemLineSpec = S['SystemLineSpec']
 export type PaginatedResponse_MooringSystemSummary_ =
   S['PaginatedResponse_MooringSystemSummary_']
 
+// Equilíbrio de plataforma (F5.5)
+export type EnvironmentalLoad = S['EnvironmentalLoad']
+export type PlatformEquilibriumResult = S['PlatformEquilibriumResult']
+
 export type LineCategory =
   | 'Wire'
   | 'StuddedChain'

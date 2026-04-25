@@ -18,6 +18,7 @@ import type {
   PaginatedResponse_CaseSummary_,
   PaginatedResponse_LineTypeOutput_,
   PaginatedResponse_MooringSystemSummary_,
+  PlatformEquilibriumResult,
   VersionResponse,
 } from './types'
 
@@ -168,6 +169,35 @@ export const exportMooringSystemJsonUrl = (msysId: number) =>
 
 export const exportMooringSystemPdfUrl = (msysId: number) =>
   `/api/v1/mooring-systems/${msysId}/export/pdf`
+
+// Equilíbrio de plataforma (F5.5)
+export interface EnvironmentalLoadBody {
+  Fx: number
+  Fy: number
+  Mz?: number
+}
+
+export const solveEquilibrium = (
+  msysId: number,
+  env: EnvironmentalLoadBody,
+) =>
+  apiClient
+    .post<PlatformEquilibriumResult>(
+      `/mooring-systems/${msysId}/equilibrium`,
+      env,
+    )
+    .then((r) => r.data)
+
+export const previewEquilibrium = (
+  system: MooringSystemInput,
+  env: EnvironmentalLoadBody,
+) =>
+  apiClient
+    .post<PlatformEquilibriumResult>(
+      `/mooring-systems/equilibrium-preview`,
+      { system, env },
+    )
+    .then((r) => r.data)
 
 // ─────────────────────────────── import/export ─────────────────────────────
 export const importMoor = (payload: Record<string, unknown>) =>

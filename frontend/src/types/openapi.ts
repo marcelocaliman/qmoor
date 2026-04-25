@@ -466,6 +466,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mooring-systems/{msys_id}/equilibrium": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Equilíbrio de plataforma sob carga ambiental (F5.5)
+         * @description Dada uma carga horizontal F_env sobre a plataforma, encontra o offset (Δx, Δy) tal que a soma das forças horizontais das linhas restauradoras + F_env = 0. Cada linha é resolvida no novo arranjo geométrico (fairlead deslocado) em modo Range.
+         *
+         *     **Não persiste**: equilíbrio depende de F_env, que é input transiente. A UI tipicamente roda este endpoint à medida que o usuário ajusta os sliders de carga.
+         */
+        post: operations["equilibrium_api_v1_mooring_systems__msys_id__equilibrium_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mooring-systems/equilibrium-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview de equilíbrio (sem persistir, sem id)
+         * @description Resolve equilíbrio recebendo o input completo + carga ambiental no body. Útil para preview live durante a edição (quando o sistema ainda não foi salvo).
+         */
+        post: operations["equilibrium_preview_api_v1_mooring_systems_equilibrium_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -702,6 +744,63 @@ export interface components {
              * @description Explicação curta do perfil.
              */
             description: string;
+        };
+        /**
+         * EnvironmentalLoad
+         * @description Carga ambiental sobre a plataforma (F5.5).
+         *
+         *     Resultante horizontal de vento + corrente + onda média (1ª ordem).
+         *     Convenção: força ATUANDO na plataforma; o solver acha o offset
+         *     (Δx, Δy) tal que a soma das forças das linhas restauradoras + Fenv
+         *     seja zero.
+         *
+         *     `Mz` (momento em torno do eixo vertical) fica reservado mas não é
+         *     usado no MVP — para isso seria preciso modelar fairleads não-radiais
+         *     ou tomar yaw como graus de liberdade adicional.
+         */
+        EnvironmentalLoad: {
+            /**
+             * Fx
+             * @description Componente X da carga ambiental (N) no frame da plataforma.
+             * @default 0
+             */
+            Fx: number;
+            /**
+             * Fy
+             * @description Componente Y da carga ambiental (N) no frame da plataforma.
+             * @default 0
+             */
+            Fy: number;
+            /**
+             * Mz
+             * @description Momento em torno do eixo Z (N·m). Reservado — não usado no MVP atual (mooring radial; M_z sempre 0 em equilíbrio).
+             * @default 0
+             */
+            Mz: number;
+        };
+        /**
+         * EquilibriumRequest
+         * @description Body do POST /equilibrium — carga ambiental sobre a plataforma.
+         */
+        EquilibriumRequest: {
+            /**
+             * Fx
+             * @description Componente X (N)
+             * @default 0
+             */
+            Fx: number;
+            /**
+             * Fy
+             * @description Componente Y (N)
+             * @default 0
+             */
+            Fy: number;
+            /**
+             * Mz
+             * @description Momento Z (N·m, reservado)
+             * @default 0
+             */
+            Mz: number;
         };
         /**
          * ErrorDetail
@@ -1381,6 +1480,91 @@ export interface components {
             page: number;
             /** Page Size */
             page_size: number;
+        };
+        /**
+         * PlatformEquilibriumResult
+         * @description Resultado do solver de equilíbrio de plataforma (F5.5).
+         *
+         *     Para uma carga ambiental dada, o solver encontra o offset
+         *     (Δx, Δy) da plataforma e resolve cada linha na geometria
+         *     deslocada. Cada `MooringLineResult` aqui reflete a tensão e o
+         *     perfil resultante da linha NA POSIÇÃO de equilíbrio (não no
+         *     baseline).
+         *
+         *     `restoring_force_xy` é a soma vetorial das forças horizontais das
+         *     linhas no offset de equilíbrio. Em equilíbrio perfeito,
+         *     `restoring_force_xy + (env.Fx, env.Fy) ≈ 0` (resíduo numérico).
+         */
+        PlatformEquilibriumResult: {
+            environmental_load: components["schemas"]["EnvironmentalLoad"];
+            /**
+             * Offset Xy
+             * @description Offset da plataforma a partir da posição neutra (m). Positivo na direção do empurrão da carga ambiental.
+             */
+            offset_xy: [
+                number,
+                number
+            ];
+            /** Offset Magnitude */
+            offset_magnitude: number;
+            /**
+             * Offset Azimuth Deg
+             * @default 0
+             */
+            offset_azimuth_deg: number;
+            /** Lines */
+            lines: components["schemas"]["MooringLineResult"][];
+            /**
+             * Restoring Force Xy
+             * @description Soma vetorial das forças das linhas no offset de equilíbrio (N). Em equilíbrio com Fenv, `restoring + env_force ≈ 0`.
+             */
+            restoring_force_xy: [
+                number,
+                number
+            ];
+            /**
+             * Residual Magnitude
+             * @description ‖Σ F_linhas + F_env‖ no offset final (N). Mede a qualidade da convergência; valores típicos < 10 N.
+             * @default 0
+             */
+            residual_magnitude: number;
+            /**
+             * Iterations
+             * @default 0
+             */
+            iterations: number;
+            /**
+             * Converged
+             * @default false
+             */
+            converged: boolean;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Max Utilization
+             * @default 0
+             */
+            max_utilization: number;
+            /** @default ok */
+            worst_alert_level: components["schemas"]["AlertLevel"];
+            /**
+             * N Converged
+             * @default 0
+             */
+            n_converged: number;
+            /**
+             * N Invalid
+             * @default 0
+             */
+            n_invalid: number;
+            /**
+             * Solver Version
+             * @default
+             */
+            solver_version: string;
         };
         /**
          * SeabedConfig
@@ -2769,6 +2953,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    equilibrium_api_v1_mooring_systems__msys_id__equilibrium_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msys_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EquilibriumRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformEquilibriumResult"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    equilibrium_preview_api_v1_mooring_systems_equilibrium_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformEquilibriumResult"];
                 };
             };
             /** @description Validation Error */

@@ -1,4 +1,8 @@
-import type { MooringLineResult, MooringSystemResult } from '@/api/types'
+import type {
+  MooringLineResult,
+  MooringSystemResult,
+  PlatformEquilibriumResult,
+} from '@/api/types'
 
 export interface MooringSystemPlanViewProps {
   /**
@@ -18,6 +22,13 @@ export interface MooringSystemPlanViewProps {
     fairlead_azimuth_deg: number
     fairlead_radius: number
   }>
+  /**
+   * F5.5 — quando informado, renderiza a plataforma DESLOCADA do
+   * offset de equilíbrio + linhas no novo arranjo + setas indicando
+   * o offset e a carga ambiental. Sobrescreve `result` se ambos
+   * estiverem presentes.
+   */
+  equilibrium?: PlatformEquilibriumResult
   className?: string
 }
 
@@ -37,9 +48,13 @@ export function MooringSystemPlanView({
   result,
   platformRadius,
   previewLines,
+  equilibrium,
   className,
 }: MooringSystemPlanViewProps) {
-  const lines = result?.lines ?? []
+  // F5.5 tem precedência sobre o resultado neutro: usa as linhas do
+  // arranjo deslocado e o offset_xy para mover a plataforma.
+  const lines = equilibrium?.lines ?? result?.lines ?? []
+  const offset = equilibrium?.offset_xy ?? [0, 0]
 
   // Calcula o raio máximo: maior distância de qualquer ponto desenhado
   // até a origem. Se não há linhas no resultado, usa o radius dos
@@ -140,9 +155,24 @@ export function MooringSystemPlanView({
       </text>
 
       {/* ── Plataforma ── */}
+      {/* F5.5: quando há equilíbrio, mostra a plataforma DESLOCADA do
+          offset. Adicionalmente desenha um fantasma da posição neutra
+          em opacidade baixa para o usuário comparar. */}
+      {equilibrium && (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={platformRadius * scale}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity={0.25}
+          strokeWidth={1}
+          strokeDasharray="3 4"
+        />
+      )}
       <circle
-        cx={cx}
-        cy={cy}
+        cx={cx + offset[0] * scale}
+        cy={cy - offset[1] * scale}
         r={platformRadius * scale}
         fill="currentColor"
         fillOpacity={0.08}
@@ -151,13 +181,35 @@ export function MooringSystemPlanView({
         strokeWidth={1.5}
         className="msys-animated"
       />
-      {/* Marca da proa */}
+      {/* Marca da proa (desloca junto com a plataforma) */}
       <polygon
-        points={`${cx + platformRadius * scale},${cy} ${cx + platformRadius * scale - 12},${cy - 6} ${cx + platformRadius * scale - 12},${cy + 6}`}
+        points={`${cx + (offset[0] + platformRadius) * scale},${cy - offset[1] * scale} ${cx + (offset[0] + platformRadius) * scale - 12},${cy - offset[1] * scale - 6} ${cx + (offset[0] + platformRadius) * scale - 12},${cy - offset[1] * scale + 6}`}
         fill="currentColor"
         fillOpacity={0.6}
         className="msys-animated"
       />
+      {/* Vetor do offset: do centro neutro até o centro deslocado.
+          Em equilíbrio sob carga, o offset é uma das informações
+          principais — destacamos com seta cinza. */}
+      {equilibrium && equilibrium.offset_magnitude > 0.05 && (
+        <OffsetArrow
+          dx={offset[0]}
+          dy={offset[1]}
+          cx={cx}
+          cy={cy}
+          scale={scale}
+        />
+      )}
+      {/* Vetor da carga ambiental (rosa) — origem na plataforma deslocada */}
+      {equilibrium && (
+        <EnvironmentalLoadArrow
+          fx={equilibrium.environmental_load.Fx}
+          fy={equilibrium.environmental_load.Fy}
+          maxRadius={maxRadius}
+          centerX={cx + offset[0] * scale}
+          centerY={cy - offset[1] * scale}
+        />
+      )}
 
       {/* ── Linhas (se houver resultado) ── */}
       {lines.map((lr, i) => (
@@ -210,8 +262,8 @@ export function MooringSystemPlanView({
           )
         })}
 
-      {/* ── Vetor da força resultante (quando agregado é não-trivial) ── */}
-      {result && result.aggregate_force_magnitude > 0 && (
+      {/* ── Vetor da força resultante (apenas no modo neutro) ── */}
+      {!equilibrium && result && result.aggregate_force_magnitude > 0 && (
         <ResultantArrow
           force_xy={result.aggregate_force_xy}
           maxRadius={maxRadius}
@@ -365,6 +417,105 @@ function ResultantArrow({
       <line
         x1={originX}
         y1={originY}
+        x2={tipX}
+        y2={tipY}
+        stroke="#EC4899"
+        strokeWidth={2.5}
+        strokeOpacity={0.9}
+        className="msys-animated"
+      />
+      <polygon
+        points={`${tipX},${tipY} ${ax1},${ay1} ${ax2},${ay2}`}
+        fill="#EC4899"
+        opacity={0.9}
+        className="msys-animated"
+      />
+    </g>
+  )
+}
+
+/**
+ * F5.5 — Seta cinza ligando o centro neutro ao centro deslocado da
+ * plataforma. Útil pra visualizar de onde até onde a plataforma se
+ * moveu. Tamanho 1:1 nas unidades de dado (não normalizado).
+ */
+function OffsetArrow({
+  dx, dy, cx, cy, scale,
+}: {
+  dx: number
+  dy: number
+  cx: number
+  cy: number
+  scale: number
+}) {
+  const tipX = cx + dx * scale
+  const tipY = cy - dy * scale
+  const angle = Math.atan2(tipY - cy, tipX - cx)
+  const arrowSize = 8
+  const ax1 = tipX - Math.cos(angle - Math.PI / 6) * arrowSize
+  const ay1 = tipY - Math.sin(angle - Math.PI / 6) * arrowSize
+  const ax2 = tipX - Math.cos(angle + Math.PI / 6) * arrowSize
+  const ay2 = tipY - Math.sin(angle + Math.PI / 6) * arrowSize
+  return (
+    <g>
+      <line
+        x1={cx}
+        y1={cy}
+        x2={tipX}
+        y2={tipY}
+        stroke="currentColor"
+        strokeOpacity={0.55}
+        strokeWidth={1.8}
+        strokeDasharray="6 3"
+        className="msys-animated"
+      />
+      <polygon
+        points={`${tipX},${tipY} ${ax1},${ay1} ${ax2},${ay2}`}
+        fill="currentColor"
+        opacity={0.55}
+        className="msys-animated"
+      />
+    </g>
+  )
+}
+
+/**
+ * F5.5 — Seta rosa indicando a direção e o sentido da carga
+ * ambiental aplicada. Origem no centro deslocado, comprimento
+ * proporcional ao maxRadius (35%) — magnitude visual constante.
+ */
+function EnvironmentalLoadArrow({
+  fx, fy, maxRadius, centerX, centerY,
+}: {
+  fx: number
+  fy: number
+  maxRadius: number
+  centerX: number
+  centerY: number
+}) {
+  const mag = Math.hypot(fx, fy)
+  if (mag <= 0) return null
+  // Normaliza para 35% do raio do plot — visual constante.
+  // Aplica em SVG units (sem usar `scale` porque não temos aqui).
+  // O quociente fixo dá uma seta legível sem prejulgar o range.
+  const visLen = (maxRadius * 0.35) / mag
+  // converte unidades de dado para SVG: multiplicar por scale do
+  // contexto. Como não temos scale aqui (centerX/Y já estão em SVG
+  // coords), reusamos a relação: 1 m de dado ≈ (centerX - 500) / dx.
+  // Simplificamos passando direto a fração pra dimensão visual:
+  const tipX = centerX + (fx * visLen) * 1 // visLen já normalizado
+  const tipY = centerY - (fy * visLen) * 1
+  const angle = Math.atan2(tipY - centerY, tipX - centerX)
+  const arrowSize = 10
+  const ax1 = tipX - Math.cos(angle - Math.PI / 6) * arrowSize
+  const ay1 = tipY - Math.sin(angle - Math.PI / 6) * arrowSize
+  const ax2 = tipX - Math.cos(angle + Math.PI / 6) * arrowSize
+  const ay2 = tipY - Math.sin(angle + Math.PI / 6) * arrowSize
+  return (
+    <g>
+      <line
+        x1={centerX}
+        y1={centerY}
         x2={tipX}
         y2={tipY}
         stroke="#EC4899"
