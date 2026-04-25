@@ -43,6 +43,47 @@ export function StatusBadge({ status }: { status: ConvergenceStatus }) {
   return <Badge variant={STATUS_VARIANT[status]}>{STATUS_LABEL[status]}</Badge>
 }
 
+/**
+ * Badge de severidade de anchor uplift (F5.4.6b).
+ *
+ * Drag anchors (DA / VLA) — os mais comuns em mooring offshore — toleram
+ * pouco ângulo vertical na âncora. Convencional: ≤ 5° = ok, 5°–15° =
+ * warning, > 15° = critical. Pilars e suction caissons toleram mais; o
+ * usuário pode considerar warnings aceitáveis quando souber que o tipo
+ * de âncora resiste ao uplift.
+ *
+ * Quando a severidade é "ok", omitimos o badge para não poluir a UI.
+ */
+const UPLIFT_VARIANT: Record<
+  string,
+  React.ComponentProps<typeof Badge>['variant']
+> = {
+  ok: 'success',
+  warning: 'warning',
+  critical: 'danger',
+}
+const UPLIFT_LABEL: Record<string, string> = {
+  ok: 'Âncora OK',
+  warning: 'Uplift moderado',
+  critical: 'Uplift crítico',
+}
+
+export function AnchorUpliftBadge({
+  severity,
+  angleDeg,
+}: {
+  severity?: string | null
+  angleDeg: number
+}) {
+  if (!severity || severity === 'ok') return null
+  const label = UPLIFT_LABEL[severity] ?? 'Uplift'
+  return (
+    <Badge variant={UPLIFT_VARIANT[severity] ?? 'warning'}>
+      {label} · {angleDeg.toFixed(1)}°
+    </Badge>
+  )
+}
+
 const CATEGORY_VARIANT: Record<
   LineCategory,
   React.ComponentProps<typeof Badge>['variant']

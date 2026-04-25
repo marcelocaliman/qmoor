@@ -303,12 +303,26 @@ def solve(
     # a profundidade do seabed é deslocada por tan(slope)·X_total —
     # quando slope > 0 (sobe ao fairlead), depth_at_fairlead < depth_at_anchor.
     depth_at_fairlead = boundary.h - math.tan(seabed.slope_rad) * result.total_horz_distance
+
+    # F5.4.6b — Anchor uplift severity. Drag anchors (DA / VLA) toleram
+    # pouco ângulo de uplift; convencional ≤ 5° "ok", 5°–15° "warning",
+    # > 15° "critical". Pilars e suction caissons toleram mais — usuário
+    # pode considerar warnings como aceitáveis quando souber o tipo.
+    uplift_deg = abs(math.degrees(result.angle_wrt_horz_anchor))
+    if uplift_deg <= 5.0:
+        uplift_severity = "ok"
+    elif uplift_deg <= 15.0:
+        uplift_severity = "warning"
+    else:
+        uplift_severity = "critical"
+
     result = result.model_copy(update={
         "water_depth": boundary.h,
         "startpoint_depth": boundary.startpoint_depth,
         "solver_version": SOLVER_VERSION,
         "depth_at_anchor": boundary.h,
         "depth_at_fairlead": depth_at_fairlead,
+        "anchor_uplift_severity": uplift_severity,
     })
 
     # Pós-classificação (Camada 7 + alert_level da Seção 5 Documento A).

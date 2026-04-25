@@ -36,6 +36,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { SensitivityPanel } from '@/components/common/SensitivityPanel'
 import {
   AlertBadge,
+  AnchorUpliftBadge,
   CategoryBadge,
   ModeBadge,
   StatusBadge,
@@ -309,6 +310,14 @@ export function CaseDetailPage() {
                 <ModeBadge mode={caseInput.boundary.mode} />
                 {result && <StatusBadge status={result.status} />}
                 {result && <AlertBadge level={result.alert_level} />}
+                {result && (
+                  <AnchorUpliftBadge
+                    severity={result.anchor_uplift_severity}
+                    angleDeg={
+                      (result.angle_wrt_horz_anchor * 180) / Math.PI
+                    }
+                  />
+                )}
               </div>
             </div>
             <div className="text-right text-xs text-muted-foreground">

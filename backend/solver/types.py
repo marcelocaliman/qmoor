@@ -420,6 +420,14 @@ class SolverResult(BaseModel):
     utilization: float = 0.0  # fairlead_tension / MBL (0..1)
     alert_level: AlertLevel = AlertLevel.OK  # classificação por CriteriaProfile
 
+    # --- Anchor uplift (F5.4.6b) ---
+    # `angle_wrt_horz_anchor` em radianos já está acima; aqui derivamos
+    # uma severidade categórica. Drag anchors (mais comuns em mooring
+    # offshore) toleram pouco uplift — convencional ≤ 5°. Pilars e
+    # suction caissons toleram mais. Usamos 5°/15° como thresholds
+    # default (drag-friendly); usuário pode sobrescrever em UI futura.
+    anchor_uplift_severity: str = "ok"  # 'ok' | 'warning' | 'critical'
+
     # --- Contexto geométrico global (para plots surface-relative) ---
     # Propagados pelo facade solve() a partir de BoundaryConditions. Permitem
     # que o frontend renderize a geometria com Y=0 na superfície, fairlead

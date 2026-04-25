@@ -1543,6 +1543,11 @@ export interface components {
             /** @default ok */
             alert_level: components["schemas"]["AlertLevel"];
             /**
+             * Anchor Uplift Severity
+             * @default ok
+             */
+            anchor_uplift_severity: string;
+            /**
              * Water Depth
              * @default 0
              */
