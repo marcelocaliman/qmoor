@@ -24,8 +24,13 @@ from backend.api.schemas.mooring_systems import (
     MooringSystemOutput,
     MooringSystemSummary,
 )
+from backend.solver.equilibrium import solve_platform_equilibrium
 from backend.solver.multi_line import solve_mooring_system as solve_msys
-from backend.solver.types import MooringSystemResult
+from backend.solver.types import (
+    EnvironmentalLoad,
+    MooringSystemResult,
+    PlatformEquilibriumResult,
+)
 
 
 # Política de retenção de execuções (mesmo número de cases.executions).
@@ -256,6 +261,35 @@ def preview_solve(msys_input: MooringSystemInput) -> MooringSystemResult:
     return solve_msys(msys_input)
 
 
+# ==============================================================================
+# F5.5 — Equilíbrio de plataforma
+# ==============================================================================
+
+
+def solve_equilibrium_for_input(
+    msys_input: MooringSystemInput, env: EnvironmentalLoad,
+) -> PlatformEquilibriumResult:
+    """Resolve o equilíbrio sem persistir. Usado tanto por preview
+    quanto pelo endpoint /equilibrium em sistemas salvos."""
+    return solve_platform_equilibrium(msys_input, env)
+
+
+def solve_equilibrium_persisted(
+    db: Session, msys_id: int, env: EnvironmentalLoad,
+) -> PlatformEquilibriumResult | None:
+    """
+    Resolve o equilíbrio para um sistema salvo. Não persiste o
+    resultado em tabela (equilíbrio depende de F_env, que é input
+    transiente — diferente de /solve que persiste o estado neutro).
+    Devolve `None` se o sistema não existir.
+    """
+    rec = db.get(MooringSystemRecord, msys_id)
+    if rec is None:
+        return None
+    msys_input = MooringSystemInput.model_validate_json(rec.config_json)
+    return solve_platform_equilibrium(msys_input, env)
+
+
 __all__ = [
     "EXECUTION_RETENTION",
     "create_mooring_system",
@@ -266,5 +300,7 @@ __all__ = [
     "mooring_system_record_to_summary",
     "preview_solve",
     "solve_and_persist",
+    "solve_equilibrium_for_input",
+    "solve_equilibrium_persisted",
     "update_mooring_system",
 ]

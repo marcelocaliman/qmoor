@@ -28,7 +28,20 @@ from backend.api.schemas.mooring_systems import (
 )
 from backend.api.services import mooring_system_service
 from backend.api.services.pdf_report import build_mooring_system_pdf
-from backend.solver.types import MooringSystemResult
+from backend.solver.types import (
+    EnvironmentalLoad,
+    MooringSystemResult,
+    PlatformEquilibriumResult,
+)
+from pydantic import BaseModel, Field
+
+
+class EquilibriumRequest(BaseModel):
+    """Body do POST /equilibrium — carga ambiental sobre a plataforma."""
+
+    Fx: float = Field(default=0.0, description="Componente X (N)")
+    Fy: float = Field(default=0.0, description="Componente Y (N)")
+    Mz: float = Field(default=0.0, description="Momento Z (N·m, reservado)")
 
 router = APIRouter(prefix="/mooring-systems", tags=["mooring-systems"])
 
@@ -258,6 +271,57 @@ def export_mooring_system_pdf(
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+@router.post(
+    "/{msys_id}/equilibrium",
+    response_model=PlatformEquilibriumResult,
+    summary="Equilíbrio de plataforma sob carga ambiental (F5.5)",
+    description=(
+        "Dada uma carga horizontal F_env sobre a plataforma, encontra "
+        "o offset (Δx, Δy) tal que a soma das forças horizontais das "
+        "linhas restauradoras + F_env = 0. Cada linha é resolvida no "
+        "novo arranjo geométrico (fairlead deslocado) em modo Range.\n\n"
+        "**Não persiste**: equilíbrio depende de F_env, que é input "
+        "transiente. A UI tipicamente roda este endpoint à medida que "
+        "o usuário ajusta os sliders de carga."
+    ),
+    responses={404: {"model": ErrorResponse}},
+)
+def equilibrium(
+    msys_id: int,
+    body: EquilibriumRequest,
+    db: Session = Depends(get_db),
+) -> PlatformEquilibriumResult:
+    env = EnvironmentalLoad(Fx=body.Fx, Fy=body.Fy, Mz=body.Mz)
+    res = mooring_system_service.solve_equilibrium_persisted(db, msys_id, env)
+    if res is None:
+        raise _msys_not_found(msys_id)
+    return res
+
+
+@router.post(
+    "/equilibrium-preview",
+    response_model=PlatformEquilibriumResult,
+    summary="Preview de equilíbrio (sem persistir, sem id)",
+    description=(
+        "Resolve equilíbrio recebendo o input completo + carga "
+        "ambiental no body. Útil para preview live durante a edição "
+        "(quando o sistema ainda não foi salvo)."
+    ),
+)
+def equilibrium_preview(
+    body: dict,
+) -> PlatformEquilibriumResult:
+    """Body é {"system": MooringSystemInput, "env": {Fx, Fy, Mz?}}."""
+    msys_input = MooringSystemInput.model_validate(body.get("system", {}))
+    env_dict = body.get("env", {}) or {}
+    env = EnvironmentalLoad(
+        Fx=float(env_dict.get("Fx", 0.0)),
+        Fy=float(env_dict.get("Fy", 0.0)),
+        Mz=float(env_dict.get("Mz", 0.0)),
+    )
+    return mooring_system_service.solve_equilibrium_for_input(msys_input, env)
 
 
 __all__ = ["router"]

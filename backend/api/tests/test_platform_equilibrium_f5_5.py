@@ -184,3 +184,69 @@ def test_environmental_load_default_zero() -> None:
 def test_environmental_load_magnitude() -> None:
     env = EnvironmentalLoad(Fx=3.0, Fy=4.0)
     assert env.magnitude == pytest.approx(5.0)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# API endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _create_via_api(client) -> int:  # type: ignore[no-untyped-def]
+    """Helper: cria spread 4× via POST e devolve o id."""
+    payload = _spread_4x().model_dump()
+    resp = client.post("/api/v1/mooring-systems", json=payload)
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
+def test_post_equilibrium_carga_zero(client) -> None:  # type: ignore[no-untyped-def]
+    msys_id = _create_via_api(client)
+    resp = client.post(
+        f"/api/v1/mooring-systems/{msys_id}/equilibrium",
+        json={"Fx": 0.0, "Fy": 0.0},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["converged"] is True
+    assert body["offset_magnitude"] < 1e-3
+    assert body["n_converged"] == 4
+
+
+def test_post_equilibrium_com_carga(client) -> None:  # type: ignore[no-untyped-def]
+    msys_id = _create_via_api(client)
+    resp = client.post(
+        f"/api/v1/mooring-systems/{msys_id}/equilibrium",
+        json={"Fx": 30_000.0, "Fy": 0.0},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["converged"] is True
+    assert body["offset_xy"][0] > 0  # +X
+    assert abs(body["offset_xy"][1]) < 0.5  # ~0 em Y
+    # Resíduo dentro da tolerância
+    assert body["residual_magnitude"] < 10.0
+
+
+def test_post_equilibrium_id_inexistente_retorna_404(client) -> None:  # type: ignore[no-untyped-def]
+    resp = client.post(
+        "/api/v1/mooring-systems/9999/equilibrium",
+        json={"Fx": 1000.0},
+    )
+    assert resp.status_code == 404
+
+
+def test_post_equilibrium_preview(client) -> None:  # type: ignore[no-untyped-def]
+    """Endpoint de preview — recebe input completo + env, sem persistir."""
+    payload = {
+        "system": _spread_4x().model_dump(),
+        "env": {"Fx": 25_000.0, "Fy": 15_000.0},
+    }
+    resp = client.post(
+        "/api/v1/mooring-systems/equilibrium-preview", json=payload,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["converged"] is True
+    # Componente +X e +Y no offset (mesmo sentido da carga)
+    assert body["offset_xy"][0] > 0
+    assert body["offset_xy"][1] > 0
