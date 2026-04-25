@@ -17,6 +17,12 @@ export interface BathymetryPopoverProps {
   currentH: number
   /** Callback recebe novo slope em radianos. */
   onApplyRad: (rad: number) => void
+  /**
+   * X total resultante do solver no caso atual (m). Quando disponível,
+   * o popover pré-popula como "Distância horizontal estimada" — assim o
+   * slope calculado bate com o caso real, não com uma estimativa solta.
+   */
+  currentXTotal?: number
 }
 
 /**
@@ -38,22 +44,30 @@ export function BathymetryPopover({
   currentSlopeRad,
   currentH,
   onApplyRad,
+  currentXTotal,
 }: BathymetryPopoverProps) {
   const [open, setOpen] = useState(false)
   const [depthAnchor, setDepthAnchor] = useState<number>(currentH)
   const [depthFairlead, setDepthFairlead] = useState<number>(0)
-  const [horizDistance, setHorizDistance] = useState<number>(500)
+  // Default da distância horizontal: X total do caso (preview) quando
+  // disponível; senão 500 m como estimativa.
+  const [horizDistance, setHorizDistance] = useState<number>(
+    currentXTotal && currentXTotal > 0 ? currentXTotal : 500,
+  )
 
-  // Pre-popula depth_fairlead a partir do slope atual sempre que o popover abre.
+  // Pre-popula depth_fairlead a partir do slope atual sempre que o popover
+  // abre. O X usado é o do caso atual (preview), garantindo coerência com
+  // a geometria real — assim o slope calculado bate exatamente.
   useEffect(() => {
     if (!open) return
     setDepthAnchor(currentH)
+    const xUse = currentXTotal && currentXTotal > 0 ? currentXTotal : horizDistance
+    setHorizDistance(xUse)
     const m = Math.tan(currentSlopeRad)
-    // depth_fairlead = depth_anchor − m·horiz, se temos um horiz estimado
-    const dF = currentH - m * horizDistance
+    const dF = currentH - m * xUse
     setDepthFairlead(Number.isFinite(dF) ? Math.max(0, dF) : 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentH, currentSlopeRad])
+  }, [open, currentH, currentSlopeRad, currentXTotal])
 
   const dx = horizDistance > 0 ? horizDistance : 1
   const dz = depthAnchor - depthFairlead
@@ -107,12 +121,16 @@ export function BathymetryPopover({
               min={0}
             />
             <FieldRow
-              label="Distância horizontal estimada"
+              label="Distância horizontal entre os pontos"
               unit="m"
               value={horizDistance}
               onChange={setHorizDistance}
               min={1}
-              hint="Use o X total esperado do caso"
+              hint={
+                currentXTotal && currentXTotal > 0
+                  ? `Pré-preenchido com X total do caso atual (${currentXTotal.toFixed(1)} m). Ajuste se for outro.`
+                  : 'Use o X total esperado do caso'
+              }
             />
           </div>
           <div className="rounded-md border border-border/60 bg-muted/30 p-2">

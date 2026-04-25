@@ -514,11 +514,16 @@ export function CatenaryPlot({
 
     // ── Marker do touchdown (na linha do seabed) ──
     if (td > 0.5) {
+      // O touchdown sempre fica SOBRE a rampa do seabed. Para slope ≠ 0,
+      // usamos seabedY(plotX) em vez de anchorY fixo, garantindo que o
+      // marcador acompanha a inclinação.
+      const tdPlotX = Xtotal - td
+      const tdPlotY = seabedY(tdPlotX)
       traces.push({
         type: 'scatter',
         mode: 'markers',
-        x: [Xtotal - td],
-        y: [anchorY],
+        x: [tdPlotX],
+        y: [tdPlotY],
         marker: {
           symbol: 'diamond',
           size: 11,
@@ -527,7 +532,7 @@ export function CatenaryPlot({
         },
         name: 'Touchdown',
         hovertemplate:
-          `Touchdown<br>x = ${(Xtotal - td).toFixed(2)} m<extra></extra>`,
+          `Touchdown<br>x = ${tdPlotX.toFixed(2)} m<br>y = ${tdPlotY.toFixed(2)} m<extra></extra>`,
       })
     }
 

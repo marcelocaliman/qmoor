@@ -567,6 +567,9 @@ export function CaseFormPage() {
                       <BathymetryPopover
                         currentSlopeRad={field.value ?? 0}
                         currentH={watch('boundary.h') ?? 0}
+                        currentXTotal={
+                          previewQuery.data?.total_horz_distance ?? undefined
+                        }
                         onApplyRad={(rad) => field.onChange(rad)}
                       />
                     </div>
