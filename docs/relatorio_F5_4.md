@@ -20,7 +20,8 @@ Faseamento adotado:
 | F5.4.4   | Frontend: lista + edição + detalhe + plan view polar                | ✅ |
 | F5.4.5a  | Multi-segmento + attachments por linha (reuso de SegmentEditor)     | ✅ |
 | F5.4.5b  | Animações + export JSON + Δ vs execução anterior                    | ✅ |
-| F5.4.5c  | PDF report + comparação multi-sistema                               | ⬜ |
+| F5.4.5c  | PDF report (com plan view + tabela de linhas + agregados)           | ✅ |
+| F5.4.5d  | Comparação multi-sistema (overlay)                                  | ⬜ |
 
 ---
 
@@ -435,11 +436,79 @@ boia, etc.
 
 ---
 
-## Próximo passo: F5.4.5c (opcional)
+---
 
-1. PDF report do sistema (reaproveitar `pdf_report.py`): plan view do
-   matplotlib + tabela de linhas + agregados.
-2. Comparação multi-sistema (overlay de plan views de 2-3 sistemas
+## F5.4.5c — entrega (PDF report)
+
+### `build_mooring_system_pdf`
+
+[`pdf_report.py`](../backend/api/services/pdf_report.py) ganhou função
+`build_mooring_system_pdf(msys_rec, execution)` que reusa a infra
+existente do `build_pdf` (reportlab + matplotlib em backend `Agg`).
+Layout do PDF:
+
+1. **Header** — nome do sistema, id, timestamp, versão do solver.
+2. **Disclaimer técnico** — mesmo da Seção 10 do Documento A v2.2,
+   reaproveitado da constante `DISCLAIMER`.
+3. **Configuração** — tabela com nome, descrição, raio plataforma,
+   nº de linhas, id.
+4. **Plan view** — `_plan_view_png` desenha matplotlib (com matplotlib
+   `Agg` backend) com plataforma circular, linhas radiais coloridas
+   por `alert_level`, marcadores de fairlead/anchor, vetor resultante
+   rosa (quando há execução). Modo sem execução: âncoras placeholder
+   em 4× raio do fairlead.
+5. **Resultante agregado** (page break para destaque) — tabela com
+   resultante kN/azimuth, n_converged/total, max_utilization, pior
+   alerta colorido conforme severidade.
+6. **Detalhe por linha** — tabela 8 colunas: nome, Az, R, T_fl/X
+   input, H, util, alerta, status.
+
+Sem execução: relatório parcial com configuração + plan view sem
+âncoras; mensagem orientando a rodar `/solve`.
+
+### Endpoint
+
+`GET /api/v1/mooring-systems/{id}/export/pdf` retorna `application/pdf`
+com `Content-Disposition: attachment` e filename ASCII-safe (mesma
+sanitização do export JSON).
+
+### Frontend
+
+Botão **PDF** com ícone `FileText` no topbar do detail, ao lado do
+botão JSON. Abre em nova aba; o browser baixa via Content-Disposition.
+
+### Testes
+
+3 testes novos:
+
+- `test_export_pdf_sem_execucao_retorna_pdf_parcial`: gera PDF mesmo
+  sem execução; valida magic header `%PDF-` e tamanho > 1 KB.
+- `test_export_pdf_com_execucao_inclui_resultados`: após `/solve`,
+  PDF tem > 5 KB (plan view + tabelas de resultado).
+- `test_export_pdf_id_inexistente_retorna_404`.
+
+Suite total backend: **226 testes verde**.
+
+### Validação
+
+- `tsc -b --force` ✅
+- `npm run build` ✅ (1.58s)
+- `pytest backend/` ✅ (226 testes)
+
+### Decisão
+
+**`build_mooring_system_pdf` no mesmo arquivo `pdf_report.py`.**
+Compartilha `DISCLAIMER`, `_base_table_style`, `_alert_color` e o
+boilerplate de Paragraph/Spacer com `build_pdf`. Separar seria mais
+DRY mas custaria duplicação de imports e de `getSampleStyleSheet`
+boilerplate. Como é uma extensão coesa do mesmo módulo (geração de
+relatórios em PDF), mantive junto.
+
+---
+
+## Próximo passo (opcional): F5.4.5d
+
+1. Comparação multi-sistema (overlay de plan views de 2-3 sistemas
    diferentes com legendas).
-3. Animação do vetor resultante mais sofisticada (pulse/glow quando
-   convergência muda).
+2. Página de comparação tipo `/mooring-systems/compare?ids=1,2,3`
+   reaproveitando o pattern do `CompareCasesPage`.

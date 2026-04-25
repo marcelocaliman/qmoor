@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from backend.api.db.session import get_db
@@ -27,6 +27,7 @@ from backend.api.schemas.mooring_systems import (
     MooringSystemSummary,
 )
 from backend.api.services import mooring_system_service
+from backend.api.services.pdf_report import build_mooring_system_pdf
 from backend.solver.types import MooringSystemResult
 
 router = APIRouter(prefix="/mooring-systems", tags=["mooring-systems"])
@@ -212,6 +213,47 @@ def export_mooring_system_json(
     filename = f"qmoor_msys_{safe_name}.json"
     return JSONResponse(
         content=out.model_dump(mode="json"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get(
+    "/{msys_id}/export/pdf",
+    summary="Exportar relatório técnico em PDF",
+    description=(
+        "Gera um PDF A4 com header, disclaimer técnico, tabela de "
+        "configuração, plan view (matplotlib), tabela de agregados e "
+        "tabela detalhada por linha. Usa a **última execução** do "
+        "sistema; se nunca foi resolvido, gera relatório parcial só "
+        "com as entradas e plan view com âncoras estimadas."
+    ),
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "PDF gerado com sucesso",
+        },
+        404: {"model": ErrorResponse},
+    },
+)
+def export_mooring_system_pdf(
+    msys_id: int, db: Session = Depends(get_db)
+) -> Response:
+    rec = mooring_system_service.get_mooring_system(db, msys_id)
+    if rec is None:
+        raise _msys_not_found(msys_id)
+    latest = rec.executions[0] if rec.executions else None
+    pdf_bytes = build_mooring_system_pdf(rec, latest)
+    safe_name = "".join(
+        c if (c.isascii() and (c.isalnum() or c in ("-", "_"))) else "_"
+        for c in rec.name
+    )[:50] or f"mooring_system_{msys_id}"
+    filename = f"qmoor_msys_{safe_name}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },

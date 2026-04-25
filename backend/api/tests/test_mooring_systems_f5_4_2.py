@@ -342,3 +342,39 @@ def test_export_json_retorna_payload_e_attachment_header(client) -> None:  # typ
 def test_export_json_id_inexistente_retorna_404(client) -> None:  # type: ignore[no-untyped-def]
     resp = client.get("/api/v1/mooring-systems/9999/export/json")
     assert resp.status_code == 404
+
+
+def test_export_pdf_sem_execucao_retorna_pdf_parcial(client) -> None:  # type: ignore[no-untyped-def]
+    """PDF é gerado mesmo quando o sistema nunca foi resolvido."""
+    msys = _symmetric_spread_4x().model_dump()
+    create = client.post("/api/v1/mooring-systems", json=msys).json()
+    msys_id = create["id"]
+
+    resp = client.get(f"/api/v1/mooring-systems/{msys_id}/export/pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    # PDF "magic header"
+    assert resp.content.startswith(b"%PDF-")
+    # Tem corpo razoável (>1 KB)
+    assert len(resp.content) > 1024
+    cd = resp.headers.get("content-disposition") or ""
+    assert ".pdf" in cd
+
+
+def test_export_pdf_com_execucao_inclui_resultados(client) -> None:  # type: ignore[no-untyped-def]
+    """Após /solve, o PDF carrega o resultado completo."""
+    msys = _symmetric_spread_4x().model_dump()
+    create = client.post("/api/v1/mooring-systems", json=msys).json()
+    msys_id = create["id"]
+    client.post(f"/api/v1/mooring-systems/{msys_id}/solve")
+
+    resp = client.get(f"/api/v1/mooring-systems/{msys_id}/export/pdf")
+    assert resp.status_code == 200
+    assert resp.content.startswith(b"%PDF-")
+    # PDF com execução é maior (tabelas adicionais)
+    assert len(resp.content) > 5000
+
+
+def test_export_pdf_id_inexistente_retorna_404(client) -> None:  # type: ignore[no-untyped-def]
+    resp = client.get("/api/v1/mooring-systems/9999/export/pdf")
+    assert resp.status_code == 404

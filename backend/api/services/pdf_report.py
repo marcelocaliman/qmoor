@@ -37,10 +37,20 @@ from reportlab.platypus import (  # noqa: E402
     TableStyle,
 )
 
-from backend.api.db.models import CaseRecord, ExecutionRecord
+from backend.api.db.models import (
+    CaseRecord,
+    ExecutionRecord,
+    MooringSystemExecutionRecord,
+    MooringSystemRecord,
+)
 from backend.api.routers.health import SOLVER_VERSION
 from backend.api.schemas.cases import CaseInput
-from backend.solver.types import SolverResult
+from backend.api.schemas.mooring_systems import MooringSystemInput
+from backend.solver.types import (
+    ConvergenceStatus,
+    MooringSystemResult,
+    SolverResult,
+)
 
 # Disclaimer obrigatório — Seção 10 do Documento A v2.2
 DISCLAIMER = (
@@ -248,4 +258,327 @@ def build_pdf(
     return buf.getvalue()
 
 
-__all__ = ["build_pdf", "DISCLAIMER"]
+# ───────────────────────────────────────────────────────────────────────
+# F5.4.5c — PDF report do mooring system multi-linha
+# ───────────────────────────────────────────────────────────────────────
+
+
+def _plan_view_png(
+    msys_input: MooringSystemInput,
+    result: Optional[MooringSystemResult],
+) -> bytes:
+    """
+    Plan view (visão de topo) do sistema multi-linha em PNG.
+
+    Plataforma como círculo, linhas como segmentos do fairlead até a
+    âncora, coloridas por `alert_level`. Quando `result` está presente,
+    o resultante agregado aparece como vetor rosa partindo do centro.
+    Sem resultado, desenha-se a plataforma + fairleads + linhas
+    radiais com âncoras estimadas em 4× raio (placeholder).
+    """
+    fig, ax = plt.subplots(figsize=(7.0, 7.0), dpi=120)
+    R = msys_input.platform_radius
+    lines = result.lines if result else []
+
+    # Determina o range
+    max_radius = R
+    if lines:
+        for lr in lines:
+            r = max(
+                (lr.anchor_xy[0] ** 2 + lr.anchor_xy[1] ** 2) ** 0.5,
+                (lr.fairlead_xy[0] ** 2 + lr.fairlead_xy[1] ** 2) ** 0.5,
+            )
+            if r > max_radius:
+                max_radius = r
+    else:
+        max_radius = max(R, max(l.fairlead_radius for l in msys_input.lines) * 4)
+    span = max_radius * 1.15
+
+    # Anéis de referência
+    for frac in (0.33, 0.66, 1.0):
+        circle = plt.Circle(
+            (0, 0), span * frac, fill=False,
+            color="#888888", linewidth=0.6, linestyle=":", alpha=0.4,
+        )
+        ax.add_patch(circle)
+
+    # Plataforma
+    plat = plt.Circle(
+        (0, 0), R, fill=True, facecolor="#bcbcbc",
+        edgecolor="#555555", alpha=0.35, linewidth=1.2,
+    )
+    ax.add_patch(plat)
+    # Marca da proa (+X)
+    ax.plot(R, 0, marker=">", markersize=14, color="#444444")
+
+    alert_color = {
+        "ok": "#10B981",
+        "yellow": "#F59E0B",
+        "red": "#EF4444",
+        "broken": "#7F1D1D",
+    }
+
+    if lines:
+        for lr in lines:
+            sr = lr.solver_result
+            invalid = sr.status != ConvergenceStatus.CONVERGED
+            color = "#9CA3AF" if invalid else alert_color.get(
+                sr.alert_level.value, "#10B981",
+            )
+            ax.plot(
+                [lr.fairlead_xy[0], lr.anchor_xy[0]],
+                [lr.fairlead_xy[1], lr.anchor_xy[1]],
+                color=color, linewidth=2.0 if not invalid else 1.0,
+                linestyle="--" if invalid else "-", alpha=0.85,
+            )
+            # Fairlead
+            ax.plot(*lr.fairlead_xy, marker="o", markersize=6, color=color)
+            # Anchor
+            ax.plot(*lr.anchor_xy, marker="^", markersize=8, color=color)
+            # Label
+            mx = lr.fairlead_xy[0] + 0.6 * (lr.anchor_xy[0] - lr.fairlead_xy[0])
+            my = lr.fairlead_xy[1] + 0.6 * (lr.anchor_xy[1] - lr.fairlead_xy[1])
+            ax.annotate(lr.line_name, (mx, my), fontsize=9, ha="center",
+                        va="bottom", color="#222222")
+        # Resultante
+        if result and result.aggregate_force_magnitude > 0:
+            fx, fy = result.aggregate_force_xy
+            mag = (fx**2 + fy**2) ** 0.5
+            tlen = max_radius * 0.4
+            ax.annotate(
+                "", xy=(fx / mag * tlen, fy / mag * tlen), xytext=(0, 0),
+                arrowprops=dict(
+                    arrowstyle="-|>", color="#EC4899", lw=2.0, alpha=0.9,
+                ),
+            )
+    else:
+        # Modo sem resultado — só linhas radiais com âncoras estimadas
+        import math as _math
+        for line in msys_input.lines:
+            theta = _math.radians(line.fairlead_azimuth_deg)
+            fx = line.fairlead_radius * _math.cos(theta)
+            fy = line.fairlead_radius * _math.sin(theta)
+            ar = line.fairlead_radius * 4
+            ax_x = ar * _math.cos(theta)
+            ay = ar * _math.sin(theta)
+            ax.plot([fx, ax_x], [fy, ay],
+                    color="#888888", linestyle="--", linewidth=1.2, alpha=0.6)
+            ax.plot(fx, fy, marker="o", markersize=5, color="#888888")
+            ax.annotate(line.name,
+                        ((fx + ax_x) / 2, (fy + ay) / 2),
+                        fontsize=9, ha="center", va="bottom",
+                        color="#444444")
+
+    ax.set_xlim(-span, span)
+    ax.set_ylim(-span, span)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axhline(0, color="#bbbbbb", linewidth=0.5)
+    ax.axvline(0, color="#bbbbbb", linewidth=0.5)
+    ax.set_xlabel("X (m) — proa →")
+    ax.set_ylabel("Y (m) — bombordo ↑")
+    ax.set_title("Plan view do mooring system")
+    ax.grid(True, alpha=0.18)
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _msys_meta_table(
+    msys_rec: MooringSystemRecord, msys_input: MooringSystemInput,
+) -> list[list[str]]:
+    return [
+        ["Grandeza", "Valor"],
+        ["Nome do sistema", msys_input.name],
+        ["Descrição", msys_input.description or "—"],
+        ["Raio plataforma (m)", f"{msys_input.platform_radius:.2f}"],
+        ["Nº de linhas", str(len(msys_input.lines))],
+        ["ID", str(msys_rec.id)],
+    ]
+
+
+def _msys_aggregate_table(result: MooringSystemResult) -> list[list[str]]:
+    mag_kn = result.aggregate_force_magnitude / 1000
+    return [
+        ["Métrica", "Valor"],
+        ["Resultante (kN)", f"{mag_kn:.2f}"],
+        [
+            "Direção (°)",
+            (
+                f"{result.aggregate_force_azimuth_deg:.1f}"
+                if result.aggregate_force_magnitude > 0
+                else "— (≈ 0)"
+            ),
+        ],
+        [
+            "Linhas convergidas",
+            f"{result.n_converged} / {len(result.lines)}",
+        ],
+        ["Linhas inválidas", str(result.n_invalid)],
+        ["Máx. utilização", f"{result.max_utilization * 100:.2f}%"],
+        ["Pior alerta", result.worst_alert_level.value],
+        ["Solver", result.solver_version or "—"],
+    ]
+
+
+def _msys_lines_table(
+    msys_input: MooringSystemInput,
+    result: Optional[MooringSystemResult],
+) -> list[list[str]]:
+    rows: list[list[str]] = [
+        ["Linha", "Az (°)", "R (m)", "T_fl/X input", "H (kN)",
+         "Util.", "Alerta", "Status"],
+    ]
+    for idx, line in enumerate(msys_input.lines):
+        bc = line.boundary
+        input_label = (
+            f"{bc.input_value / 1000:.1f} kN" if bc.mode.value == "Tension"
+            else f"{bc.input_value:.1f} m"
+        )
+        lr = result.lines[idx] if result else None
+        sr = lr.solver_result if lr else None
+        h_kn = f"{sr.H / 1000:.1f}" if sr else "—"
+        util = f"{sr.utilization * 100:.1f}%" if sr else "—"
+        alert = sr.alert_level.value if sr else "—"
+        status = sr.status.value if sr else "—"
+        rows.append([
+            line.name,
+            f"{line.fairlead_azimuth_deg:.1f}",
+            f"{line.fairlead_radius:.1f}",
+            input_label,
+            h_kn,
+            util,
+            alert,
+            status,
+        ])
+    return rows
+
+
+def build_mooring_system_pdf(
+    msys_rec: MooringSystemRecord,
+    execution: Optional[MooringSystemExecutionRecord],
+) -> bytes:
+    """
+    Relatório PDF do mooring system multi-linha (F5.4.5c).
+
+    Layout:
+      1. Header (sistema, timestamp, solver version)
+      2. Disclaimer técnico (mesmo da Seção 10 do Documento A)
+      3. Tabela de metadados
+      4. Plan view 2D (matplotlib → PNG → embed)
+      5. Tabela de agregados (resultante, direção, etc.)
+      6. Tabela por linha (Az, R, H, util, alerta, status)
+
+    Sem execução, gera relatório só com inputs + plan view sem
+    posições resolvidas.
+    """
+    msys_input = MooringSystemInput.model_validate_json(msys_rec.config_json)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=2 * cm, rightMargin=2 * cm,
+        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        title=f"QMoor — {msys_input.name}",
+    )
+    styles = getSampleStyleSheet()
+    if "HeaderSmall" not in styles.byName:
+        styles.add(ParagraphStyle(
+            name="HeaderSmall", parent=styles["Normal"],
+            fontSize=9, textColor=colors.HexColor("#555555"),
+        ))
+    if "DisclaimerBox" not in styles.byName:
+        styles.add(ParagraphStyle(
+            name="DisclaimerBox", parent=styles["Normal"],
+            fontSize=8, textColor=colors.HexColor("#606060"),
+            borderPadding=6, borderColor=colors.HexColor("#cccccc"),
+            borderWidth=0.5, leading=10,
+        ))
+
+    story: list = []
+
+    # Header
+    story.append(Paragraph(
+        "<b>QMoor Web — Relatório de mooring system</b>", styles["Title"],
+    ))
+    story.append(Paragraph(
+        f"Sistema: <b>{msys_input.name}</b> (id {msys_rec.id})",
+        styles["Heading3"],
+    ))
+    now = datetime.now(timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M:%S %Z")
+    story.append(Paragraph(
+        f"Gerado em {now} — Solver versão {SOLVER_VERSION}",
+        styles["HeaderSmall"],
+    ))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Disclaimer
+    story.append(Paragraph("<b>Disclaimer técnico</b>", styles["Heading4"]))
+    story.append(Paragraph(DISCLAIMER, styles["DisclaimerBox"]))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Metadados
+    story.append(Paragraph("<b>Configuração</b>", styles["Heading3"]))
+    meta = Table(_msys_meta_table(msys_rec, msys_input), colWidths=[6 * cm, 8 * cm])
+    meta.setStyle(_base_table_style())
+    story.append(meta)
+    story.append(Spacer(1, 0.4 * cm))
+
+    result = (
+        MooringSystemResult.model_validate_json(execution.result_json)
+        if execution is not None
+        else None
+    )
+
+    # Plan view
+    story.append(Paragraph("<b>Plan view</b>", styles["Heading3"]))
+    png = _plan_view_png(msys_input, result)
+    story.append(Image(io.BytesIO(png), width=14 * cm, height=14 * cm))
+    story.append(Spacer(1, 0.4 * cm))
+
+    if result is None:
+        story.append(Paragraph(
+            "Nenhuma execução do solver disponível para este sistema. "
+            "Execute POST /mooring-systems/{id}/solve antes de gerar "
+            "o relatório completo.",
+            styles["Normal"],
+        ))
+        doc.build(story)
+        return buf.getvalue()
+
+    # Agregados
+    story.append(PageBreak())
+    story.append(Paragraph("<b>Resultante agregado</b>", styles["Heading3"]))
+    agg = Table(_msys_aggregate_table(result), colWidths=[6 * cm, 8 * cm])
+    agg.setStyle(_base_table_style())
+    # Pinta a célula do "Pior alerta" com a cor correspondente.
+    for i, row in enumerate(_msys_aggregate_table(result)):
+        if row[0] == "Pior alerta":
+            agg.setStyle(TableStyle([
+                ("TEXTCOLOR", (1, i), (1, i),
+                 _alert_color(result.worst_alert_level.value)),
+                ("FONTNAME", (1, i), (1, i), "Helvetica-Bold"),
+            ]))
+    story.append(agg)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Tabela por linha
+    story.append(Paragraph("<b>Detalhe por linha</b>", styles["Heading3"]))
+    lines_table = Table(
+        _msys_lines_table(msys_input, result),
+        colWidths=[
+            2.4 * cm, 1.5 * cm, 1.5 * cm, 2.6 * cm,
+            1.8 * cm, 1.7 * cm, 1.8 * cm, 2.4 * cm,
+        ],
+    )
+    lines_table.setStyle(_base_table_style())
+    story.append(lines_table)
+    story.append(Spacer(1, 0.4 * cm))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+__all__ = ["build_pdf", "build_mooring_system_pdf", "DISCLAIMER"]

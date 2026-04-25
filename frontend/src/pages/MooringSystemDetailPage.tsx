@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Download,
   Edit3,
+  FileText,
   Loader2,
   Minus,
   Zap,
@@ -18,6 +19,7 @@ import { toast } from 'sonner'
 import { ApiError } from '@/api/client'
 import {
   exportMooringSystemJsonUrl,
+  exportMooringSystemPdfUrl,
   getMooringSystem,
   solveMooringSystem,
 } from '@/api/endpoints'
@@ -97,7 +99,17 @@ export function MooringSystemDetailPage() {
           rel="noreferrer"
         >
           <Download className="h-4 w-4" />
-          Exportar JSON
+          JSON
+        </a>
+      </Button>
+      <Button asChild variant="outline" size="sm">
+        <a
+          href={exportMooringSystemPdfUrl(msysId)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <FileText className="h-4 w-4" />
+          PDF
         </a>
       </Button>
       <Button asChild variant="outline" size="sm">

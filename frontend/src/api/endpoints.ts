@@ -166,6 +166,9 @@ export const previewSolveMooringSystem = (input: MooringSystemInput) =>
 export const exportMooringSystemJsonUrl = (msysId: number) =>
   `/api/v1/mooring-systems/${msysId}/export/json`
 
+export const exportMooringSystemPdfUrl = (msysId: number) =>
+  `/api/v1/mooring-systems/${msysId}/export/pdf`
+
 // ─────────────────────────────── import/export ─────────────────────────────
 export const importMoor = (payload: Record<string, unknown>) =>
   apiClient.post<CaseOutput>('/import/moor', payload).then((r) => r.data)
