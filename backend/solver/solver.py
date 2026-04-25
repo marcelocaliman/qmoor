@@ -154,14 +154,8 @@ def solve(
         slope = seabed.slope_rad
         slope_is_significant = abs(slope) > 1e-6
 
-        if slope_is_significant and attachments:
-            # F5.3.x: combinação attachments + slope ainda não suportada.
-            raise ValueError(
-                "Combinação de attachments (boias/clumps) com seabed "
-                "inclinado ainda não é suportada. Use uma das duas, ou "
-                "slope = 0."
-            )
-
+        # F5.3.y: attachments + slope agora suportados via integrador
+        # com grounded estendido para aplicar saltos em V nas junções.
         if n_segments > 1 or attachments:
             # Linha composta heterogênea (F5.1) ou com attachments (F5.2).
             # Caminho de código separado preserva o solver single-segmento

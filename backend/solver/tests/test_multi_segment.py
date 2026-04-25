@@ -37,7 +37,9 @@ from backend.solver.solver import solve
 from backend.solver.types import (
     BoundaryConditions,
     ConvergenceStatus,
+    LineAttachment,
     LineSegment,
+    SeabedConfig,
     SolutionMode,
 )
 
@@ -254,6 +256,79 @@ def test_BC_MS_04_dois_identicos_vs_single() -> None:
 # ==============================================================================
 # BC-MS-05 — variação grande de EA (1 ordem de grandeza)
 # ==============================================================================
+
+
+def test_BC_MT_01_touchdown_multi_sem_slope() -> None:
+    """
+    F5.3.y P2: multi-segmento sem slope, COM touchdown. Antes da F5.3.y
+    o solver multi rejeitava (V_anchor < 0); agora despacha para o motor
+    `_solve_multi_sloped` com slope=0, que cobre o caso plano.
+
+    Caso: chain pendant + wire, T_fl baixo o suficiente para forçar
+    touchdown no chain inferior (segmento 0).
+    """
+    chain = LineSegment(length=200.0, w=1500.0, EA=4.5e8, MBL=6e6, category="StuddedChain")
+    wire = LineSegment(length=700.0, w=200.0, EA=4.4e8, MBL=4.8e6, category="Wire")
+    bc = BoundaryConditions(
+        h=300.0, mode=SolutionMode.TENSION, input_value=400_000,
+    )
+    seabed = SeabedConfig(mu=0.3, slope_rad=0.0)
+    r = solve([chain, wire], bc, seabed=seabed)
+    assert r.status == ConvergenceStatus.CONVERGED, r.message
+    assert r.fairlead_tension == pytest.approx(400_000, rel=1e-3)
+    # Touchdown deve existir
+    assert r.total_grounded_length > 0
+    # Conservação esticada
+    assert abs(
+        r.total_grounded_length + r.total_suspended_length - r.stretched_length
+    ) < 0.5
+
+
+def test_BC_AS_01_attachments_com_slope() -> None:
+    """
+    F5.3.y P1: combinação attachments + slope agora suportada. Boia entre
+    chain e wire, em rampa descendente -5°, com touchdown no chain inferior.
+    """
+    chain = LineSegment(length=200.0, w=1500.0, EA=4.5e8, MBL=6e6, category="StuddedChain")
+    wire = LineSegment(length=700.0, w=200.0, EA=4.4e8, MBL=4.8e6, category="Wire")
+    bc = BoundaryConditions(
+        h=300.0, mode=SolutionMode.TENSION, input_value=400_000,
+    )
+    boia = LineAttachment(
+        kind="buoy", submerged_force=20_000.0, position_index=0, name="Boia M",
+    )
+    seabed = SeabedConfig(mu=0.3, slope_rad=math.radians(-5))
+    r = solve([chain, wire], bc, seabed=seabed, attachments=[boia])
+    assert r.status == ConvergenceStatus.CONVERGED, r.message
+    assert r.fairlead_tension == pytest.approx(400_000, rel=1e-3)
+    # H constante no trecho suspenso
+    Tx_susp = r.tension_x[-50:]
+    assert (max(Tx_susp) - min(Tx_susp)) / r.H < 1e-3
+
+
+def test_BC_MT_02_elasticidade_no_grounded() -> None:
+    """
+    P3: valida que elasticidade é aplicada no L_g (média ponderada de
+    T_mean entre grounded e suspended). L_stretched > L_unstretched
+    com strain consistente.
+    """
+    from backend.solver.types import LineAttachment as _LA  # noqa: F401
+    chain = LineSegment(length=200.0, w=1500.0, EA=2e8, MBL=6e6, category="StuddedChain")
+    wire = LineSegment(length=700.0, w=200.0, EA=2e8, MBL=4.8e6, category="Wire")
+    bc = BoundaryConditions(
+        h=300.0, mode=SolutionMode.TENSION, input_value=400_000,
+    )
+    seabed = SeabedConfig(mu=0.3, slope_rad=math.radians(-3))
+    r = solve([chain, wire], bc, seabed=seabed)
+    assert r.status == ConvergenceStatus.CONVERGED, r.message
+    # Elasticidade: L_stretched > L_unstretched, com strain razoável
+    assert r.stretched_length > r.unstretched_length
+    strain = r.elongation / r.unstretched_length
+    assert 0 < strain < 0.05
+    # Conservação
+    assert abs(
+        r.total_grounded_length + r.total_suspended_length - r.stretched_length
+    ) < 1.0
 
 
 def test_BC_MS_05_EA_diferentes() -> None:

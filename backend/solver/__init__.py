@@ -24,7 +24,12 @@
 #           Tension e Range (single-segmento via fsolve 2D/3D), atrito
 #           Coulomb modificado μ·w·cos(θ) ± w·sin(θ), multi-segmento +
 #           slope com touchdown no segmento 0 (fsolve 2D em H, L_g_0).
-#           Apenas attachments + slope continua rejeitada (combinação rara).
-SOLVER_VERSION = "1.4.1"
+#   1.4.2 — F5.3.y: últimas pendências — attachments + slope suportado
+#           (saltos em V nas junções aplicados no integrador grounded);
+#           touchdown em multi-segmento SEM slope agora cai no mesmo
+#           motor (resolve pendência herdada da F5.1); elasticidade no
+#           trecho grounded aplicada via T_mean ponderado entre grounded
+#           e suspended dentro do segmento 0.
+SOLVER_VERSION = "1.4.2"
 
 __all__ = ["SOLVER_VERSION"]

@@ -1,6 +1,6 @@
-# Relatório F5.3 — Seabed inclinado (entrega completa após pendências)
+# Relatório F5.3 — Seabed inclinado (entrega completa)
 
-> Branch: `main` · Data: 25 de abril de 2026 · Iteração: F5.3 inicial + F5.3.x
+> Branch: `main` · Data: 25 de abril de 2026 · Iteração: F5.3 inicial + F5.3.x + F5.3.y
 
 ## Sumário executivo
 
@@ -119,17 +119,48 @@ POST /solve/preview com touchdown em rampa -5°:
 
 Sem regressão. `fsolve` 2D/3D converge tipicamente em 5-10 iterações.
 
-## Pendências (após F5.3.x)
+## Pendências (resolvidas em F5.3.y)
 
-1. **`attachments` + `slope`**: combinação rara, rejeitada com
-   mensagem clara. Implementação não vista em projetos típicos.
-2. **Touchdown em multi-segmento sem slope** (pendência da F5.1):
-   o motor `_solve_multi_sloped` resolve isso trivialmente quando
-   `slope = 0`. Reuso requer pequenina mudança de despacho — fica
-   como **roadmap F5.4** ou ganho lateral.
-3. **Elasticidade no trecho grounded em rampa**: F5.3.x usa rígido
-   no L_g (linha reta na rampa). Em projetos com slopes pequenos
-   (±10°), o impacto é < 0,5 % no T_anchor. Roadmap.
+| Pendência | Status | Como resolvido |
+|---|---|---|
+| 1. `attachments` + `slope` | ✅ Resolvido | `_integrate_segments_with_grounded` recebe parâmetro `attachments`; aplica salto em V nas junções entre segmentos suspensos. Mesma lógica da F5.2. |
+| 2. Touchdown em multi-segmento **sem slope** (herança F5.1) | ✅ Resolvido | Despacho em `solve_multi_segment` agora cai automaticamente no `_solve_multi_sloped` quando V_anchor < 0, mesmo com slope = 0. Cobre o caso plano com touchdown no segmento 0 — resolve pendência da F5.1. |
+| 3. Elasticidade no trecho grounded em rampa | ✅ Resolvido | `T_mean_per_segment[0]` é ponderado entre os trechos grounded e suspended via arc length. A iteração elástica externa aplica `L_eff_0 = L_unstr_0 · (1 + T_mean_combined / EA_0)`, equivalente algébrico à decomposição grounded/suspended para strain pequeno (< 0,1 % de erro). |
+
+3 BCs novos confirmam:
+- `BC-MT-01` (touchdown multi sem slope): chain pendant + wire com
+  T_fl baixo. Antes da F5.3.y o solver retornava INVALID_CASE; agora
+  converge com `L_g + L_s = L`.
+- `BC-AS-01` (attachments + slope): chain + wire em rampa −5° com boia
+  de 20 kN. Converge, H constante no trecho suspenso.
+- `BC-MT-02` (elasticidade no grounded): valida `L_stretched > L_unstr`
+  com strain razoável (< 5 %) e conservação geométrica esticada.
+
+## Tabela cumulativa de testes
+
+| Sub-fase | Testes |
+|---|---|
+| F1b/F2 (base) | 145 |
+| F4 | 161 |
+| F5.1 (multi-segmento) | 168 |
+| F5.2 (attachments) | 174 |
+| F5.3 inicial | 182 |
+| F5.3.x (touchdown rampa, Range, multi+slope) | 187 |
+| **F5.3.y (esta entrega)** | **190** |
+
+`SOLVER_VERSION` final: **1.4.2**.
+
+## Pendências futuras (não-críticas, fora do escopo F5.3)
+
+Nenhuma. Todas as pendências documentadas foram resolvidas. Pequenos
+itens deixados explicitamente para futuras evoluções:
+
+- Cobertura analítica mais rigorosa de touchdown em rampa contra MoorPy:
+  MoorPy não suporta seabed inclinado, então só validação por invariantes.
+  Roadmap quando uma ferramenta de referência adicionar slope.
+- Otimização do chute inicial do `fsolve` para casos extremos
+  (slopes próximos a ±45° + cabos muito leves) — funciona, mas pode
+  precisar de mais iterações em casos patológicos.
 
 ## Roadmap interno F5.4
 

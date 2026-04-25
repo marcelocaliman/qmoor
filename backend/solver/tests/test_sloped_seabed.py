@@ -217,18 +217,33 @@ def test_BC_SS_07a_2_multi_segmento_em_rampa_touchdown() -> None:
     ) < 5.0  # tolerância maior por causa da elasticidade
 
 
-def test_BC_SS_07b_slope_com_attachments_invalida() -> None:
-    s = _build_segment(length=400.0)
+def test_BC_SS_07b_slope_com_attachments_suportado() -> None:
+    """
+    F5.3.y P1: combinação de slope + attachments agora é suportada.
+    O integrador grounded foi estendido para aplicar saltos em V nas
+    junções entre segmentos.
+    """
+    chain = LineSegment(length=200.0, w=1500.0, EA=4.5e8, MBL=6e6, category="StuddedChain")
+    wire = LineSegment(length=700.0, w=200.0, EA=4.4e8, MBL=4.8e6, category="Wire")
     bc = BoundaryConditions(
-        h=300.0, mode=SolutionMode.TENSION, input_value=500_000,
+        h=300.0, mode=SolutionMode.TENSION, input_value=400_000,
     )
-    boia = LineAttachment(kind="buoy", submerged_force=10_000.0, position_index=0)
+    boia = LineAttachment(
+        kind="buoy", submerged_force=20_000.0, position_index=0, name="Boia central",
+    )
     r = solve(
-        [s, s], bc,
-        seabed=SeabedConfig(mu=0.3, slope_rad=math.radians(5)),
+        [chain, wire], bc,
+        seabed=SeabedConfig(mu=0.3, slope_rad=math.radians(-5)),
         attachments=[boia],
     )
-    assert r.status == ConvergenceStatus.INVALID_CASE
+    assert r.status == ConvergenceStatus.CONVERGED, r.message
+    assert r.fairlead_tension == pytest.approx(400_000, rel=1e-3)
+    # H constante (mesmo com slope, attachments e touchdown)
+    Tx = r.tension_x
+    # No trecho grounded, Tx = T·cos(θ) (varia com T linear).
+    # No trecho suspenso, Tx = H constante. Pegamos os últimos pontos.
+    Tx_susp = Tx[-30:]
+    assert (max(Tx_susp) - min(Tx_susp)) / r.H < 1e-3
 
 
 # ==============================================================================

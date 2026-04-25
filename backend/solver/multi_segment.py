@@ -440,10 +440,11 @@ def _integrate_segments_with_grounded(
     L_g_0: float,
     slope_rad: float,
     mu: float,
+    attachments: Sequence[LineAttachment] = (),
     n_points_per_segment: int = 50,
 ) -> dict:
     """
-    Multi-segmento com trecho grounded em rampa (F5.3 + F5.1).
+    Multi-segmento com trecho grounded em rampa (F5.3 + F5.1 + F5.2).
 
     Trecho grounded: parte do segmento 0 (comprimento L_g_0) apoiada no
     seabed inclinado de inclinação `slope_rad`. Trecho suspenso: resto
@@ -452,6 +453,13 @@ def _integrate_segments_with_grounded(
 
     Tangência no touchdown: catenária do segmento 0 entra no touchdown
     com inclinação local = slope_rad (encaixe suave na rampa).
+
+    Attachments (F5.3.y P1): se fornecidos, aplicam saltos em V_local
+    nas junções entre segmentos suspensos (mesmas regras da F5.2).
+    Attachment com `position_index = 0` (junção entre seg 0 e seg 1)
+    é aplicado APÓS a integração do trecho suspenso do segmento 0,
+    antes do segmento 1. Tangência no touchdown não é afetada por
+    attachments (eles ficam acima do touchdown na linha).
     """
     if H <= 0:
         raise ValueError(f"H={H} deve ser > 0")
@@ -517,7 +525,32 @@ def _integrate_segments_with_grounded(
 
     L_0_suspended = L_effs[0] - L_g_0
 
+    # Pré-tabela de força signada por junção (mesma regra da F5.2).
+    junction_force: dict[int, float] = {}
+    for att in attachments:
+        if att.position_index < 0 or att.position_index >= len(segments) - 1:
+            raise ValueError(
+                f"Attachment '{att.name or att.kind}' tem position_index="
+                f"{att.position_index} fora do range válido "
+                f"[0, {len(segments) - 2}] para {len(segments)} segmentos."
+            )
+        junction_force[att.position_index] = (
+            junction_force.get(att.position_index, 0.0) + _signed_force(att)
+        )
+
     for i, (seg, L_i_full) in enumerate(zip(segments, L_effs)):
+        # Aplica salto da junção anterior (i-1 → i) — mesma lógica da
+        # função sem grounded. position_index = i-1 atua AO ENTRAR no
+        # segmento i. Salto é aplicado em V_local antes da integração.
+        if i > 0 and (i - 1) in junction_force:
+            V_local = V_local + junction_force[i - 1]
+            if V_local < 0:
+                raise ValueError(
+                    f"Attachment na junção {i - 1} produz V_local="
+                    f"{V_local:.1f} < 0 — empuxo excede peso suspenso "
+                    "acumulado."
+                )
+
         # Para o segmento 0, usamos apenas L_0_suspended (resto após grounded)
         L_eff_seg = L_0_suspended if i == 0 else L_i_full
         if L_eff_seg < 1e-9:
@@ -635,6 +668,7 @@ def _solve_multi_sloped(
     mu: float,
     slope_rad: float,
     config: SolverConfig,
+    attachments: Sequence[LineAttachment] = (),
 ) -> dict:
     """
     Multi-segmento com touchdown na rampa: fsolve 2D sobre (H, L_g_0).
@@ -650,6 +684,18 @@ def _solve_multi_sloped(
     sum_wL_higher = sum(s.w * L for s, L in zip(segments[1:], L_effs[1:]))
     m = math.tan(slope_rad)
 
+    # Pre-check de viabilidade: peso submerso total (linha + attachments)
+    # deve ser positivo, senão a geometria seria invertida (boias > peso).
+    sum_wL = sum(s.w * L for s, L in zip(segments, L_effs))
+    sum_F = sum(_signed_force(att) for att in attachments)
+    sum_total = sum_wL + sum_F
+    if sum_total <= 0:
+        raise ValueError(
+            f"Somatório de peso suspenso (Σw·L + Σ F_attachments) = "
+            f"{sum_total:.1f} N <= 0: empuxo das boias excede o peso da "
+            "linha. Geometria invertida não suportada."
+        )
+
     def F(vars: np.ndarray) -> np.ndarray:
         H, L_g_0 = vars
         if H <= 0 or L_g_0 < 0 or L_g_0 > L_0 - 1e-6:
@@ -657,6 +703,7 @@ def _solve_multi_sloped(
         try:
             res = _integrate_segments_with_grounded(
                 segments, L_effs, H, L_g_0, slope_rad, mu,
+                attachments=attachments,
             )
         except ValueError:
             return np.array([1e9, 1e9])
@@ -686,6 +733,7 @@ def _solve_multi_sloped(
     H_sol, L_g_sol = sol
     return _integrate_segments_with_grounded(
         segments, L_effs, H_sol, L_g_sol, slope_rad, mu,
+        attachments=attachments,
     )
 
 
@@ -727,49 +775,41 @@ def solve_multi_segment(
     iters_used = 0
     tol = max(s.length for s in segments) * config.elastic_tolerance
 
-    use_sloped = abs(slope_rad) > 1e-9
-    has_grounded = False  # detectado na primeira iteração
+    # F5.3.y: detecta dinamicamente se há touchdown no segmento 0.
+    # O motor _solve_multi_sloped funciona tanto com slope ≠ 0 quanto
+    # com slope = 0 (caso plano). Quando o solver fully-suspended falha
+    # ou retorna V_anchor < 0, fazemos fallback para o motor com grounded.
+    has_grounded = False
 
     for it in range(config.max_elastic_iter):
         iters_used = it + 1
-        if use_sloped:
-            # F5.3.x P2: multi-segmento + slope. Detecta se há touchdown
-            # tentando primeiro o solver fully-suspended (mais barato).
-            # Se V_anchor < 0, despacha para o solver com grounded.
-            if not has_grounded:
-                try:
-                    rigid_susp = _solve_rigid_multi(
-                        segments, L_effs, h, mode, input_value, config, attachments,
-                    )
-                    # Se converge com V_anchor >= 0, fully suspended OK
-                    if rigid_susp.get("V_anchor", 0.0) >= 0:
-                        rigid = rigid_susp
-                    else:
-                        has_grounded = True
-                        rigid = _solve_multi_sloped(
-                            segments, L_effs, h, mode, input_value,
-                            mu, slope_rad, config,
-                        )
-                except ValueError:
+        if not has_grounded:
+            try:
+                rigid_susp = _solve_rigid_multi(
+                    segments, L_effs, h, mode, input_value, config, attachments,
+                )
+                if rigid_susp.get("V_anchor", 0.0) >= 0:
+                    rigid = rigid_susp
+                else:
+                    # V_anchor < 0 → exige touchdown. Despacha para grounded.
                     has_grounded = True
                     rigid = _solve_multi_sloped(
                         segments, L_effs, h, mode, input_value,
-                        mu, slope_rad, config,
+                        mu, slope_rad, config, attachments,
                     )
-            else:
+            except ValueError:
+                # Solver fully-suspended falhou (não conseguiu bracketar):
+                # provavelmente caso de touchdown.
+                has_grounded = True
                 rigid = _solve_multi_sloped(
                     segments, L_effs, h, mode, input_value,
-                    mu, slope_rad, config,
-                )
-            if attachments:
-                # F5.3.x: combinação multi + slope + attachments fica para
-                # próxima evolução (rejeitada na fachada solver.py).
-                raise ValueError(
-                    "Multi-segmento + slope + attachments ainda não suportado."
+                    mu, slope_rad, config, attachments,
                 )
         else:
-            rigid = _solve_rigid_multi(
-                segments, L_effs, h, mode, input_value, config, attachments,
+            # Já sabemos que há grounded — vai direto.
+            rigid = _solve_multi_sloped(
+                segments, L_effs, h, mode, input_value,
+                mu, slope_rad, config, attachments,
             )
         last_rigid = rigid
         new_L_effs = [
