@@ -156,13 +156,25 @@ export function MooringSystemFormPage() {
 
   async function onSubmitAndSolve(v: MooringSystemInput) {
     const saved = await saveMutation.mutateAsync(v)
-    toast.promise(solveMooringSystem(saved.id), {
+    // Aguarda o solve antes de navegar para que o detail page já
+    // mostre a execução nova (caso contrário, fica com a anterior até
+    // o usuário clicar em Resolver manualmente).
+    const solvePromise = solveMooringSystem(saved.id)
+    toast.promise(solvePromise, {
       loading: 'Calculando…',
       success: 'Sistema calculado.',
       error: (err: unknown) => ({
         message: err instanceof ApiError ? err.message : 'Erro no solver',
       }),
     })
+    try {
+      await solvePromise
+    } catch {
+      // Se o solve falhar, navega assim mesmo — usuário verá o sistema
+      // salvo + última execução anterior + toast de erro do solver.
+    }
+    queryClient.invalidateQueries({ queryKey: ['mooring-system', saved.id] })
+    queryClient.invalidateQueries({ queryKey: ['mooring-systems'] })
     navigate(`/mooring-systems/${saved.id}`)
   }
 

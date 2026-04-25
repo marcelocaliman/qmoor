@@ -241,7 +241,13 @@ export function CaseFormPage() {
   async function onSubmitAndSolve(v: CaseFormValues) {
     try {
       const saved = await saveMutation.mutateAsync(v)
-      toast.promise(solveCase(saved.id), {
+      // Aguarda o solve antes de navegar para garantir que o detail
+      // page já encontre a execução nova no cache da query (que será
+      // invalidada logo abaixo). Antes do fix, o navigate disparava
+      // ANTES do solve terminar e o detail mostrava dados antigos até
+      // o usuário clicar em "Recalcular" manualmente.
+      const solvePromise = solveCase(saved.id)
+      toast.promise(solvePromise, {
         loading: 'Calculando…',
         success: 'Caso calculado com sucesso.',
         error: (err: unknown) => ({
@@ -249,6 +255,17 @@ export function CaseFormPage() {
             err instanceof ApiError ? `Solver: ${err.message}` : 'Erro no solver',
         }),
       })
+      try {
+        await solvePromise
+      } catch {
+        // Mesmo que o solve falhe, navegamos para o detail — usuário
+        // verá o caso salvo + última execução (anterior, se houver) +
+        // toast de erro do solver.
+      }
+      // Invalida a query do caso pra que o detail page busque a versão
+      // atualizada (com a nova execução).
+      queryClient.invalidateQueries({ queryKey: ['case', String(saved.id)] })
+      queryClient.invalidateQueries({ queryKey: ['cases'] })
       navigate(`/cases/${saved.id}`)
     } catch { /* noop */ }
   }

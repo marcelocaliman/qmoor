@@ -52,12 +52,18 @@ export function SensitivityPanel({
   onApplied,
 }: SensitivityPanelProps) {
   const system = useUnitsStore((s) => s.system)
-  const segment = baseInput.segments[0]!
   const baseTfl =
     baseInput.boundary.mode === 'Tension'
       ? baseInput.boundary.input_value
       : 0
-  const baseLength = segment.length
+  // Comprimento BASE = soma de TODOS os segmentos. O slider escala
+  // todos proporcionalmente (mantém razão entre segmentos quando
+  // multi-segmento — antes do fix, só o primeiro segmento entrava no
+  // preview e os demais sumiam do gráfico).
+  const baseLength = baseInput.segments.reduce(
+    (acc, s) => acc + s.length,
+    0,
+  )
   const baseMu = baseInput.seabed?.mu ?? 0
 
   const [knobs, setKnobs] = useState<Knobs>({
@@ -80,11 +86,18 @@ export function SensitivityPanel({
   )
 
   const previewInput = useMemo<CaseInput>(() => {
+    // Escala TODOS os segmentos pelo mesmo fator — preserva a razão
+    // entre eles quando multi-segmento. Ex.: [200, 300] com mul=0.95
+    // vira [190, 285] (total 475). Antes do fix, todos os segmentos
+    // exceto o [0] eram descartados do preview, e o gráfico mostrava
+    // só uma linha homogênea.
+    const mul = debouncedKnobs.lengthMul
     return {
       ...baseInput,
-      segments: [
-        { ...segment, length: baseLength * debouncedKnobs.lengthMul },
-      ],
+      segments: baseInput.segments.map((seg) => ({
+        ...seg,
+        length: seg.length * mul,
+      })),
       boundary: {
         ...baseInput.boundary,
         input_value:
@@ -98,7 +111,7 @@ export function SensitivityPanel({
         slope_rad: baseInput.seabed?.slope_rad ?? 0,
       },
     }
-  }, [baseInput, segment, baseTfl, baseLength, debouncedKnobs])
+  }, [baseInput, baseTfl, debouncedKnobs])
 
   const previewQuery = useQuery<SolverResult, ApiError>({
     queryKey: ['sensitivity-preview', caseId, debouncedKnobs],
@@ -224,7 +237,11 @@ export function SensitivityPanel({
           />
         )}
         <KnobSlider
-          label="Comprimento da linha"
+          label={
+            baseInput.segments.length > 1
+              ? 'Comprimento total (todos os segmentos)'
+              : 'Comprimento da linha'
+          }
           valueLabel={fmtMeters(lengthActual, 1)}
           baselineLabel={`baseline ${fmtMeters(baseLength, 1)}`}
           mul={knobs.lengthMul}
