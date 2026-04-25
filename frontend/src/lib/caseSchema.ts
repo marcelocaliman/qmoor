@@ -5,6 +5,20 @@ import { z } from 'zod'
  * Espelha o `CaseInput` do backend (types.ts gerado da OpenAPI) mas
  * adiciona validações e mensagens em PT-BR que a API levantaria só no submit.
  */
+/**
+ * Attachment pontual (boia ou clump weight). F5.2.
+ *
+ * Posicionado em uma JUNÇÃO entre segmentos: position_index = 0 fica
+ * entre seg[0] e seg[1], etc. Para um número N de segmentos, junções
+ * válidas são 0..N-2.
+ */
+export const lineAttachmentSchema = z.object({
+  kind: z.enum(['clump_weight', 'buoy']),
+  submerged_force: z.number().positive('Força submersa deve ser > 0'),
+  position_index: z.number().int().min(0),
+  name: z.string().trim().max(80).nullable().optional(),
+})
+
 export const lineSegmentSchema = z.object({
   length: z.number().positive('Comprimento deve ser > 0'),
   w: z.number().positive('Peso submerso deve ser > 0'),
@@ -60,6 +74,11 @@ export const caseInputSchema = z
       'UserDefined',
     ]),
     user_defined_limits: userLimitsSchema.optional().nullable(),
+    attachments: z
+      .array(lineAttachmentSchema)
+      .max(20, 'Até 20 attachments por linha.')
+      .optional()
+      .default([]),
   })
   .refine(
     (v) =>
@@ -109,4 +128,5 @@ export const EMPTY_CASE: CaseFormValues = {
   seabed: { mu: 0.6 },       // default de wire em argila firme (Seção 4.4)
   criteria_profile: 'MVP_Preliminary',
   user_defined_limits: null,
+  attachments: [],
 }

@@ -395,7 +395,10 @@ export function CaseDetailPage() {
                 )}
                 <Card className="mb-4">
                   <CardContent className="h-[480px] p-2">
-                    <CatenaryPlot result={result} />
+                    <CatenaryPlot
+                      result={result}
+                      attachments={caseInput.attachments ?? []}
+                    />
                   </CardContent>
                 </Card>
                 <div className="mb-4">

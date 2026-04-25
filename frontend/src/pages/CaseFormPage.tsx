@@ -25,6 +25,7 @@ import {
   updateCase,
 } from '@/api/endpoints'
 import type { SolverResult } from '@/api/types'
+import { AttachmentsEditor } from '@/components/common/AttachmentsEditor'
 import { CatenaryPlot } from '@/components/common/CatenaryPlot'
 import { SegmentEditor } from '@/components/common/SegmentEditor'
 import { UnitInput } from '@/components/common/UnitInput'
@@ -108,6 +109,8 @@ export function CaseFormPage() {
 
   // Lista dinâmica de segmentos (F5.1). useFieldArray cuida do estado.
   const segmentsArray = useFieldArray({ control, name: 'segments' })
+  // Lista dinâmica de attachments (F5.2): boias e clump weights nas junções.
+  const attachmentsArray = useFieldArray({ control, name: 'attachments' })
 
   useEffect(() => {
     if (existing) {
@@ -119,6 +122,7 @@ export function CaseFormPage() {
         seabed: existing.input.seabed,
         criteria_profile: existing.input.criteria_profile,
         user_defined_limits: existing.input.user_defined_limits ?? null,
+        attachments: existing.input.attachments ?? [],
       })
     }
   }, [existing, reset])
@@ -138,6 +142,7 @@ export function CaseFormPage() {
         se: debouncedValues.seabed,
         cp: debouncedValues.criteria_profile,
         u: debouncedValues.user_defined_limits,
+        a: debouncedValues.attachments,
       }),
     [debouncedValues],
   )
@@ -428,6 +433,12 @@ export function CaseFormPage() {
                   + Adicionar segmento (próximo do fairlead)
                 </Button>
               )}
+              {/* F5.2: attachments aparece quando há ≥ 2 segmentos */}
+              <AttachmentsEditor
+                control={control}
+                attachments={attachmentsArray}
+                segmentCount={segmentsArray.fields.length}
+              />
             </div>
           </Section>
 
@@ -530,6 +541,7 @@ export function CaseFormPage() {
               isFetching={previewQuery.isFetching}
               result={previewQuery.data}
               previewReady={previewReady}
+              attachments={debouncedValues.attachments ?? []}
             />
           </CardContent>
         </Card>
@@ -660,10 +672,12 @@ function PlotArea({
   isFetching,
   result,
   previewReady,
+  attachments,
 }: {
   isFetching: boolean
   result?: SolverResult
   previewReady: boolean
+  attachments?: import('@/api/types').LineAttachment[]
 }) {
   if (!previewReady && !result) {
     return (
@@ -705,7 +719,7 @@ function PlotArea({
       </div>
     )
   }
-  return <CatenaryPlot result={result} />
+  return <CatenaryPlot result={result} attachments={attachments} />
 }
 
 function MetricsRow({

@@ -20,6 +20,8 @@ export type LineSegment = S['LineSegment']
 export type BoundaryConditions = S['BoundaryConditions']
 export type SeabedConfig = S['SeabedConfig']
 export type UtilizationLimits = S['UtilizationLimits']
+export type LineAttachment = S['LineAttachment']
+export type AttachmentKind = LineAttachment['kind']
 
 export type SolutionMode = S['SolutionMode']
 export type ConvergenceStatus = S['ConvergenceStatus']

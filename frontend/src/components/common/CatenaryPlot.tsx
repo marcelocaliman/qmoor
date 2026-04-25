@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react'
-import type { SolverResult } from '@/api/types'
+import type { LineAttachment, SolverResult } from '@/api/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useThemeStore, resolveTheme } from '@/store/theme'
 
@@ -97,6 +97,11 @@ export interface CatenaryPlotProps {
   height?: number
   /** Força aspect ratio 1:1 (representação geométrica fiel). Default: false. */
   equalAspect?: boolean
+  /**
+   * Attachments aplicados (boias e clumps). F5.2. Renderizados como
+   * marcadores nas junções entre segmentos.
+   */
+  attachments?: LineAttachment[]
 }
 
 /**
@@ -120,6 +125,7 @@ export function CatenaryPlot({
   result,
   height,
   equalAspect = false,
+  attachments = [],
 }: CatenaryPlotProps) {
   const fillContainer = height == null
   const plotStyle: React.CSSProperties = fillContainer
@@ -416,6 +422,76 @@ export function CatenaryPlot({
         `T_anc = ${(result.anchor_tension / 1000).toFixed(1)} kN<extra></extra>`,
     })
 
+    // ── Marcadores de attachments (boias e clumps, F5.2) ──
+    // Cada attachment fica na junção `position_index` entre seg i e seg i+1.
+    // No frame anchor-first (solver), a junção j corresponde ao índice
+    // segment_boundaries[j+1]. Após reverse() ela vai para
+    // (N - 1 - segment_boundaries[j+1]) no frame fairlead-first do plot.
+    if (attachments.length > 0 && segBounds.length >= 2) {
+      const N = curve.plotX.length
+      const buoyX: number[] = []
+      const buoyY: number[] = []
+      const buoyText: string[] = []
+      const clumpX: number[] = []
+      const clumpY: number[] = []
+      const clumpText: string[] = []
+      for (const att of attachments) {
+        const junctionA = att.position_index + 1  // índice em segment_boundaries
+        if (junctionA <= 0 || junctionA >= segBounds.length) continue
+        const idxAnchorFrame = segBounds[junctionA]!
+        const idxPlot = N - 1 - idxAnchorFrame
+        const px = curve.plotX[idxPlot]
+        const py = curve.plotY[idxPlot]
+        if (px == null || py == null) continue
+        const label = att.name
+          ? `${att.name} (${(att.submerged_force / 1000).toFixed(1)} kN)`
+          : `${att.kind === 'buoy' ? 'Boia' : 'Clump'} (${(att.submerged_force / 1000).toFixed(1)} kN)`
+        if (att.kind === 'buoy') {
+          buoyX.push(px)
+          buoyY.push(py)
+          buoyText.push(label)
+        } else {
+          clumpX.push(px)
+          clumpY.push(py)
+          clumpText.push(label)
+        }
+      }
+      if (buoyX.length > 0) {
+        traces.push({
+          type: 'scatter',
+          mode: 'markers',
+          x: buoyX,
+          y: buoyY,
+          marker: {
+            symbol: 'circle',
+            size: 14,
+            color: theme === 'dark' ? '#3B82F6' : '#0EA5E9',
+            line: { color: '#FFFFFF', width: 2 },
+          },
+          name: 'Boia',
+          text: buoyText,
+          hovertemplate: '%{text}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<extra></extra>',
+        })
+      }
+      if (clumpX.length > 0) {
+        traces.push({
+          type: 'scatter',
+          mode: 'markers',
+          x: clumpX,
+          y: clumpY,
+          marker: {
+            symbol: 'square',
+            size: 14,
+            color: theme === 'dark' ? '#FBBF24' : '#D97706',
+            line: { color: '#FFFFFF', width: 2 },
+          },
+          name: 'Clump weight',
+          text: clumpText,
+          hovertemplate: '%{text}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<extra></extra>',
+        })
+      }
+    }
+
     // ── Marker do touchdown (na linha do seabed) ──
     if (td > 0.5) {
       traces.push({
@@ -447,6 +523,9 @@ export function CatenaryPlot({
     Xtotal,
     result.fairlead_tension,
     result.anchor_tension,
+    result.segment_boundaries,
+    attachments,
+    theme,
   ])
 
   // ── Imagens SVG sobrepostas (fairlead + âncora) ──

@@ -446,6 +446,11 @@ export interface components {
             criteria_profile: components["schemas"]["CriteriaProfile"];
             /** @description Obrigatório quando criteria_profile = UserDefined. */
             user_defined_limits?: components["schemas"]["UtilizationLimits"] | null;
+            /**
+             * Attachments
+             * @description Boias ou clump weights pontuais nas junções entre segmentos (F5.2). Cada attachment fica em `position_index` (0 = entre seg 0 e seg 1). Lista vazia para linha sem elementos pontuais.
+             */
+            attachments?: components["schemas"]["LineAttachment"][];
         };
         /**
          * CaseOutput
@@ -640,6 +645,46 @@ export interface components {
              * @example ok
              */
             db: string;
+        };
+        /**
+         * LineAttachment
+         * @description Elemento pontual ao longo da linha — boia (empuxo líquido) ou clump
+         *     weight (peso adicional). F5.2.
+         *
+         *     Convenção: attachments são posicionados em **junções entre segmentos**
+         *     (não no meio de um segmento). Para colocar uma boia no meio de uma
+         *     linha homogênea, divida em 2 segmentos idênticos e ponha a boia entre
+         *     eles.
+         *
+         *     `submerged_force` é magnitude positiva (N). A direção física é
+         *     determinada pelo `kind`:
+         *       - `clump_weight`: tende a puxar a linha para BAIXO → V += force
+         *       - `buoy`:         tende a empurrar a linha para CIMA  → V −= force
+         *
+         *     `position_index` é zero-based: 0 = junção entre segmento 0 e 1.
+         *     Range válido: 0 .. len(segments) − 2.
+         */
+        LineAttachment: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "clump_weight" | "buoy";
+            /**
+             * Submerged Force
+             * @description Força submersa líquida em N (sempre positiva)
+             */
+            submerged_force: number;
+            /**
+             * Position Index
+             * @description Índice da junção (0 = entre segmento 0 e 1). Deve ser < N-1 onde N é o número de segmentos.
+             */
+            position_index: number;
+            /**
+             * Name
+             * @description Identificador legível para relatórios (ex.: 'Boia A')
+             */
+            name?: string | null;
         };
         /**
          * LineSegment
