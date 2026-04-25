@@ -48,10 +48,12 @@ export function HelpDialog({
 }
 
 const SHORTCUTS = [
+  { keys: ['Cmd', 'K'], label: 'Abrir busca / paleta de comandos' },
   { keys: ['?'], label: 'Mostrar esta ajuda' },
   { keys: ['Cmd', 'B'], label: 'Alternar sidebar' },
   { keys: ['g', 'c'], label: 'Ir para casos' },
   { keys: ['g', 'a'], label: 'Ir para catálogo' },
   { keys: ['g', 'i'], label: 'Ir para import/export' },
+  { keys: ['g', 's'], label: 'Ir para configurações' },
   { keys: ['Esc'], label: 'Fechar diálogos' },
 ]

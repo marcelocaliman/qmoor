@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Disclaimer } from './Disclaimer'
 import { Sidebar } from './Sidebar'
+import { CommandPalette } from '@/components/common/CommandPalette'
 import { HelpDialog } from '@/components/common/HelpDialog'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useUIStore } from '@/store/ui'
@@ -14,10 +15,14 @@ export function AppLayout() {
   const navigate = useNavigate()
   const { toggleSidebar } = useUIStore()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   useKeyboardShortcuts([
     { key: '?', shift: true, handler: () => setHelpOpen((v) => !v) },
     { key: 'b', meta: true, handler: () => toggleSidebar() },
+    // Cmd+K (Mac) / Ctrl+K (Win/Linux) — command palette global. O hook
+    // já abstrai meta vs ctrl em uma só flag.
+    { key: 'k', meta: true, handler: () => setPaletteOpen((v) => !v) },
     // g c → /cases, g a → /catalog, g i → /import-export (sequence simplificada:
     // último `g` seguido imediatamente de letra. Implementação minimal abaixo.)
   ])
@@ -40,6 +45,7 @@ export function AppLayout() {
         <Disclaimer />
       </div>
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <GSequenceShortcut onNavigate={(to) => navigate(to)} />
     </div>
   )
