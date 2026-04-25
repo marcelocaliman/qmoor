@@ -119,7 +119,10 @@ export function CaseFormPage() {
         description: existing.input.description ?? '',
         segments: existing.input.segments,
         boundary: existing.input.boundary,
-        seabed: existing.input.seabed,
+        seabed: {
+          mu: existing.input.seabed?.mu ?? 0,
+          slope_rad: existing.input.seabed?.slope_rad ?? 0,
+        },
         criteria_profile: existing.input.criteria_profile,
         user_defined_limits: existing.input.user_defined_limits ?? null,
         attachments: existing.input.attachments ?? [],
@@ -519,7 +522,6 @@ export function CaseFormPage() {
               <InlineField
                 label="μ (atrito)"
                 tooltip="Wire ~0,3 · Corrente ~0,7 · Poliéster ~0,25"
-                className="col-span-2"
               >
                 <Input
                   type="number"
@@ -527,6 +529,40 @@ export function CaseFormPage() {
                   min="0"
                   {...register('seabed.mu', { valueAsNumber: true })}
                   className="h-8 font-mono"
+                />
+              </InlineField>
+              <InlineField
+                label="Inclinação seabed"
+                unit="°"
+                tooltip={
+                  '0° = horizontal. Positivo: seabed sobe em direção ao fairlead. ' +
+                  'F5.3 inicial: suporta apenas casos fully-suspended em rampa.'
+                }
+              >
+                <Controller
+                  control={control}
+                  name="seabed.slope_rad"
+                  render={({ field }) => (
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min={-45}
+                      max={45}
+                      // Estado interno em radianos; UI em graus
+                      value={
+                        field.value != null
+                          ? ((field.value * 180) / Math.PI).toFixed(2)
+                          : '0'
+                      }
+                      onChange={(e) => {
+                        const deg = parseFloat(e.target.value)
+                        field.onChange(
+                          Number.isFinite(deg) ? (deg * Math.PI) / 180 : 0,
+                        )
+                      }}
+                      className="h-8 font-mono"
+                    />
+                  )}
                 />
               </InlineField>
             </div>
@@ -542,6 +578,7 @@ export function CaseFormPage() {
               result={previewQuery.data}
               previewReady={previewReady}
               attachments={debouncedValues.attachments ?? []}
+              seabedSlopeRad={debouncedValues.seabed?.slope_rad ?? 0}
             />
           </CardContent>
         </Card>
@@ -673,11 +710,13 @@ function PlotArea({
   result,
   previewReady,
   attachments,
+  seabedSlopeRad,
 }: {
   isFetching: boolean
   result?: SolverResult
   previewReady: boolean
   attachments?: import('@/api/types').LineAttachment[]
+  seabedSlopeRad?: number
 }) {
   if (!previewReady && !result) {
     return (
@@ -719,7 +758,13 @@ function PlotArea({
       </div>
     )
   }
-  return <CatenaryPlot result={result} attachments={attachments} />
+  return (
+    <CatenaryPlot
+      result={result}
+      attachments={attachments}
+      seabedSlopeRad={seabedSlopeRad}
+    />
+  )
 }
 
 function MetricsRow({

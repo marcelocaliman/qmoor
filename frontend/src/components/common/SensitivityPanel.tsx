@@ -95,6 +95,7 @@ export function SensitivityPanel({
       seabed: {
         ...baseInput.seabed,
         mu: Math.max(0, debouncedKnobs.mu),
+        slope_rad: baseInput.seabed?.slope_rad ?? 0,
       },
     }
   }, [baseInput, segment, baseTfl, baseLength, debouncedKnobs])

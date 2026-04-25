@@ -45,6 +45,11 @@ export const boundarySchema = z.object({
 
 export const seabedSchema = z.object({
   mu: z.number().min(0, 'Atrito não pode ser negativo').default(0),
+  slope_rad: z
+    .number()
+    .min(-Math.PI / 4, 'Inclinação mín = −45°')
+    .max(Math.PI / 4, 'Inclinação máx = +45°')
+    .default(0),
 })
 
 export const userLimitsSchema = z.object({
@@ -125,7 +130,7 @@ export const EMPTY_CASE: CaseFormValues = {
     startpoint_depth: 0,
     endpoint_grounded: true,
   },
-  seabed: { mu: 0.6 },       // default de wire em argila firme (Seção 4.4)
+  seabed: { mu: 0.6, slope_rad: 0 },  // default de wire em argila firme
   criteria_profile: 'MVP_Preliminary',
   user_defined_limits: null,
   attachments: [],

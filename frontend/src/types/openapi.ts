@@ -1008,7 +1008,15 @@ export interface components {
         };
         /**
          * SeabedConfig
-         * @description Configuração do seabed (assumido plano e horizontal no MVP v1).
+         * @description Configuração do seabed.
+         *
+         *     Por padrão é horizontal (slope_rad = 0). F5.3 adiciona suporte a
+         *     inclinação constante: o seabed é uma reta passando pelo anchor com
+         *     inclinação `slope_rad` em relação à horizontal. Convenção:
+         *       - slope_rad > 0: seabed sobe em direção ao fairlead (anchor mais
+         *         profundo que o ponto sob o fairlead).
+         *       - slope_rad < 0: seabed desce em direção ao fairlead.
+         *     Range admitido: ±π/4 (≈ ±45°).
          */
         SeabedConfig: {
             /**
@@ -1017,6 +1025,12 @@ export interface components {
              * @default 0
              */
             mu: number;
+            /**
+             * Slope Rad
+             * @description Inclinação do seabed em radianos (range ±π/4). Positivo = sobe na direção do fairlead. F5.3.
+             * @default 0
+             */
+            slope_rad: number;
         };
         /**
          * SolutionMode

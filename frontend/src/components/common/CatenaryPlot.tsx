@@ -102,6 +102,11 @@ export interface CatenaryPlotProps {
    * marcadores nas junções entre segmentos.
    */
   attachments?: LineAttachment[]
+  /**
+   * Inclinação do seabed em radianos. F5.3. 0 = horizontal (default).
+   * Positivo = seabed sobe em direção ao fairlead.
+   */
+  seabedSlopeRad?: number
 }
 
 /**
@@ -126,6 +131,7 @@ export function CatenaryPlot({
   height,
   equalAspect = false,
   attachments = [],
+  seabedSlopeRad = 0,
 }: CatenaryPlotProps) {
   const fillContainer = height == null
   const plotStyle: React.CSSProperties = fillContainer
@@ -262,12 +268,23 @@ export function CatenaryPlot({
       showlegend: false,
     })
 
-    // ── Seabed: linha sólida + faixa hachurada abaixo ──
+    // ── Seabed: linha (horizontal ou inclinada conforme slope) + faixa abaixo ──
+    // No frame surface-relative do plot, anchor está em (Xtotal, -water_depth).
+    // Seabed no frame anchor (solver): y_solver = m·x_solver. Conversão:
+    //   plot_y_seabed(plot_x) = -water_depth + m·(Xtotal − plot_x)
+    const m = Math.tan(seabedSlopeRad)
+    function seabedY(plotX: number): number {
+      return anchorY + m * (Xtotal - plotX)
+    }
+    const seabedXLo = ranges.xRange[0]!
+    const seabedXHi = ranges.xRange[1]!
+    const seabedYLo = seabedY(seabedXLo)
+    const seabedYHi = seabedY(seabedXHi)
     traces.push({
       type: 'scatter',
       mode: 'lines',
-      x: [ranges.xRange[0], ranges.xRange[1], ranges.xRange[1], ranges.xRange[0]],
-      y: [anchorY, anchorY, ranges.yRange[0], ranges.yRange[0]],
+      x: [seabedXLo, seabedXHi, seabedXHi, seabedXLo],
+      y: [seabedYLo, seabedYHi, ranges.yRange[0], ranges.yRange[0]],
       fill: 'toself',
       fillcolor: palette.seabedFill,
       line: { width: 0 },
@@ -277,10 +294,13 @@ export function CatenaryPlot({
     traces.push({
       type: 'scatter',
       mode: 'lines',
-      x: [ranges.xRange[0], ranges.xRange[1]],
-      y: [anchorY, anchorY],
+      x: [seabedXLo, seabedXHi],
+      y: [seabedYLo, seabedYHi],
       line: { color: palette.seabed, width: 2 },
-      name: 'Seabed',
+      name:
+        Math.abs(seabedSlopeRad) > 1e-4
+          ? `Seabed (${((seabedSlopeRad * 180) / Math.PI).toFixed(1)}°)`
+          : 'Seabed',
       hoverinfo: 'skip',
       showlegend: false,
     })
@@ -525,6 +545,7 @@ export function CatenaryPlot({
     result.anchor_tension,
     result.segment_boundaries,
     attachments,
+    seabedSlopeRad,
     theme,
   ])
 
