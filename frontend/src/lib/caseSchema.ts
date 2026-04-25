@@ -15,6 +15,10 @@ export const lineSegmentSchema = z.object({
     .nullable()
     .optional(),
   line_type: z.string().nullable().optional(),
+  // Metadados (não entram no solver, mas documentam a linha)
+  diameter: z.number().positive().nullable().optional(),
+  dry_weight: z.number().positive().nullable().optional(),
+  modulus: z.number().positive().nullable().optional(),
 })
 
 export const boundarySchema = z.object({
@@ -90,6 +94,9 @@ export const EMPTY_CASE: CaseFormValues = {
       MBL: 3.78e6,
       category: 'Wire',
       line_type: null,
+      diameter: 0.0762,      // 3" ~ wire rope IWRCEIPS default
+      dry_weight: 242.3,     // 16.6 lbf/ft
+      modulus: 6.76e10,      // 9804 kip/in² — módulo aparente wire
     },
   ],
   boundary: {
@@ -99,7 +106,7 @@ export const EMPTY_CASE: CaseFormValues = {
     startpoint_depth: 0,
     endpoint_grounded: true,
   },
-  seabed: { mu: 0 },
+  seabed: { mu: 0.6 },       // default de wire em argila firme (Seção 4.4)
   criteria_profile: 'MVP_Preliminary',
   user_defined_limits: null,
 }

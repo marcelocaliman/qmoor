@@ -685,6 +685,21 @@ export interface components {
              * @description Identificador no catálogo (ex.: 'IWRCEIPS', 'R4Studless')
              */
             line_type?: string | null;
+            /**
+             * Diameter
+             * @description Diâmetro nominal (m) — metadado
+             */
+            diameter?: number | null;
+            /**
+             * Dry Weight
+             * @description Peso seco por unidade (N/m) — metadado
+             */
+            dry_weight?: number | null;
+            /**
+             * Modulus
+             * @description Módulo axial aparente (Pa) — metadado
+             */
+            modulus?: number | null;
         };
         /**
          * LineTypeCreate

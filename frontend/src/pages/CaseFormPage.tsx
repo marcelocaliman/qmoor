@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Tooltip,
   TooltipContent,
@@ -55,6 +56,8 @@ import {
 } from '@/lib/caseSchema'
 import {
   cn,
+  fmtAngleDeg,
+  fmtDiameterMM,
   fmtForceKN,
   fmtMeters,
   fmtNumber,
@@ -203,8 +206,21 @@ export function CaseFormPage() {
     setValue('segments.0.MBL', roundTo(lt.break_strength, 0), {
       shouldValidate: true,
     })
+    // Metadados técnicos do catálogo — não entram no solver mas aparecem
+    // nos memoriais e no card de propriedades.
+    setValue('segments.0.diameter', roundTo(lt.diameter, 5), {
+      shouldValidate: true,
+    })
+    setValue('segments.0.dry_weight', roundTo(lt.dry_weight, 2), {
+      shouldValidate: true,
+    })
+    if (lt.modulus) {
+      setValue('segments.0.modulus', roundTo(lt.modulus, 0), {
+        shouldValidate: true,
+      })
+    }
     toast.success(`${lt.line_type} aplicado`, {
-      description: `Ø ${fmtNumber(lt.diameter, 4)} m · MBL ${fmtNumber(lt.break_strength / 1000, 0)} kN`,
+      description: `Ø ${fmtDiameterMM(lt.diameter, 0)} · MBL ${fmtNumber(lt.break_strength / 1000, 0)} kN`,
     })
   }
 
@@ -258,29 +274,26 @@ export function CaseFormPage() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
         {/* ───── Linha 1: Identificação full-width ───── */}
         <Card className="shrink-0 overflow-hidden">
-          <CardContent className="flex items-center gap-3 p-3">
-            <div className="flex-1">
-              <InlineField
-                label="Nome do caso"
-                required
-                error={errors.name?.message}
-              >
-                <Input
-                  {...register('name')}
-                  placeholder="ex.: BC-01 catenária suspensa"
-                  className="h-8"
-                />
-              </InlineField>
-            </div>
-            <div className="flex-[2]">
-              <InlineField label="Descrição">
-                <Input
-                  {...register('description')}
-                  placeholder="Notas opcionais…"
-                  className="h-8 text-sm"
-                />
-              </InlineField>
-            </div>
+          <CardContent className="grid grid-cols-[1fr_2fr] items-start gap-3 p-3">
+            <InlineField
+              label="Nome do caso"
+              required
+              error={errors.name?.message}
+            >
+              <Input
+                {...register('name')}
+                placeholder="ex.: BC-01 catenária suspensa"
+                className="h-8"
+              />
+            </InlineField>
+            <InlineField label="Descrição / notas">
+              <Textarea
+                {...register('description')}
+                rows={2}
+                placeholder="Notas sobre o caso, condições de projeto, premissas…"
+                className="resize-none text-sm"
+              />
+            </InlineField>
           </CardContent>
         </Card>
 
@@ -300,8 +313,8 @@ export function CaseFormPage() {
                             id: 0,
                             line_type: field.value,
                             category: watch('segments.0.category') ?? 'Wire',
-                            diameter: 0,
-                            dry_weight: 0,
+                            diameter: watch('segments.0.diameter') ?? 0,
+                            dry_weight: watch('segments.0.dry_weight') ?? 0,
                             wet_weight: watch('segments.0.w'),
                             break_strength: watch('segments.0.MBL'),
                             qmoor_ea: watch('segments.0.EA'),
@@ -313,7 +326,7 @@ export function CaseFormPage() {
                   />
                 )}
               />
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <InlineField label="Comp." unit="m">
                   <Input
                     type="number"
@@ -322,31 +335,16 @@ export function CaseFormPage() {
                     className="h-8 font-mono"
                   />
                 </InlineField>
-                <InlineField label="Peso w" unit="N/m">
+                <InlineField label="Diâmetro" unit="m">
                   <Input
                     type="number"
-                    step="0.01"
-                    {...register('segments.0.w', { valueAsNumber: true })}
+                    step="0.001"
+                    min="0"
+                    {...register('segments.0.diameter', { valueAsNumber: true })}
                     className="h-8 font-mono"
                   />
                 </InlineField>
-                <InlineField label="EA" unit="N">
-                  <Input
-                    type="number"
-                    step="100000"
-                    {...register('segments.0.EA', { valueAsNumber: true })}
-                    className="h-8 font-mono"
-                  />
-                </InlineField>
-                <InlineField label="MBL" unit="N">
-                  <Input
-                    type="number"
-                    step="1000"
-                    {...register('segments.0.MBL', { valueAsNumber: true })}
-                    className="h-8 font-mono"
-                  />
-                </InlineField>
-                <InlineField label="Categoria" className="col-span-4">
+                <InlineField label="Categoria">
                   <Controller
                     control={control}
                     name="segments.0.category"
@@ -366,6 +364,48 @@ export function CaseFormPage() {
                         </SelectContent>
                       </Select>
                     )}
+                  />
+                </InlineField>
+                <InlineField label="Peso submerso" unit="N/m">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...register('segments.0.w', { valueAsNumber: true })}
+                    className="h-8 font-mono"
+                  />
+                </InlineField>
+                <InlineField label="Peso seco" unit="N/m">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...register('segments.0.dry_weight', {
+                      valueAsNumber: true,
+                    })}
+                    className="h-8 font-mono"
+                  />
+                </InlineField>
+                <InlineField label="EA" unit="N">
+                  <Input
+                    type="number"
+                    step="100000"
+                    {...register('segments.0.EA', { valueAsNumber: true })}
+                    className="h-8 font-mono"
+                  />
+                </InlineField>
+                <InlineField label="MBL" unit="N" className="col-span-2">
+                  <Input
+                    type="number"
+                    step="1000"
+                    {...register('segments.0.MBL', { valueAsNumber: true })}
+                    className="h-8 font-mono"
+                  />
+                </InlineField>
+                <InlineField label="Módulo" unit="Pa">
+                  <Input
+                    type="number"
+                    step="1e9"
+                    {...register('segments.0.modulus', { valueAsNumber: true })}
+                    className="h-8 font-mono"
                   />
                 </InlineField>
               </div>
@@ -685,63 +725,102 @@ function MetricsRow({
       <div className="grid shrink-0 grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="bg-muted/10">
-            <CardContent className="flex h-[88px] flex-col justify-center gap-1 p-3">
+            <CardContent className="flex h-[132px] flex-col justify-center gap-1 p-3">
               <div className="h-2.5 w-16 rounded bg-muted/40" />
               <div className="h-5 w-24 rounded bg-muted/30" />
+              <div className="h-2 w-20 rounded bg-muted/30" />
             </CardContent>
           </Card>
         ))}
       </div>
     )
   }
+  const hasTouchdown =
+    result.dist_to_first_td != null && result.dist_to_first_td > 0
+  const vFairlead = result.fairlead_tension
+    ? Math.sqrt(
+        Math.max(result.fairlead_tension ** 2 - result.H ** 2, 0),
+      )
+    : 0
+  const vAnchor = result.anchor_tension
+    ? Math.sqrt(Math.max(result.anchor_tension ** 2 - result.H ** 2, 0))
+    : 0
+
   return (
     <div className="grid shrink-0 grid-cols-4 gap-2">
+      {/* Tração — primário com gauge */}
       <MetricCard
-        label="Tração fairlead"
+        label="Tração no fairlead"
         primary={fmtForceKN(result.fairlead_tension, 1)}
         secondary={`≈ ${fmtTonfNumber(result.fairlead_tension, 1)} tf`}
+        rows={[
+          ['V vertical', fmtForceKN(vFairlead, 1)],
+          [
+            'Ângulo (horiz.)',
+            fmtAngleDeg(result.angle_wrt_horz_fairlead, 1),
+          ],
+        ]}
         extra={
           <UtilizationGauge
             value={result.utilization}
             alertLevel={result.alert_level}
-            className="mt-1"
+            className="mt-1.5"
           />
         }
       />
+
+      {/* Geometria — completa */}
       <MetricCard
         label="Geometria"
         rows={[
           ['X total', fmtMeters(result.total_horz_distance, 1)],
-          ['Suspenso', fmtMeters(result.total_suspended_length, 1)],
-          ['Apoiado', fmtMeters(result.total_grounded_length, 1)],
-        ]}
-      />
-      <MetricCard
-        label="Forças"
-        rows={[
-          [
-            'H (horiz.)',
-            `${fmtForceKN(result.H, 1)} · ${fmtTonfNumber(result.H, 1)} tf`,
-          ],
-          [
-            'T âncora',
-            `${fmtForceKN(result.anchor_tension, 1)} · ${fmtTonfNumber(result.anchor_tension, 1)} tf`,
-          ],
+          ['L suspenso', fmtMeters(result.total_suspended_length, 1)],
+          ['L apoiado', fmtMeters(result.total_grounded_length, 1)],
+          hasTouchdown
+            ? ['Dist. touchdown', fmtMeters(result.dist_to_first_td!, 1)]
+            : ['Touchdown', '—'],
+          ['L esticado', fmtMeters(result.stretched_length, 2)],
           ['ΔL', fmtMeters(result.elongation, 3)],
         ]}
       />
+
+      {/* Forças — completo (kN + tf juntos) */}
       <MetricCard
-        label="Status"
+        label="Forças"
+        rows={[
+          ['H (horizontal)', fmtForcePair(result.H)],
+          ['T âncora', fmtForcePair(result.anchor_tension)],
+          ['V âncora', fmtForcePair(vAnchor)],
+          [
+            'Ângulo âncora',
+            fmtAngleDeg(result.angle_wrt_horz_anchor, 1),
+          ],
+        ]}
+      />
+
+      {/* Status + critério */}
+      <MetricCard
+        label="Status do solver"
         extra={
           <div className="flex flex-wrap gap-1.5">
             <StatusBadge status={result.status} />
             <AlertBadge level={result.alert_level} />
           </div>
         }
-        footer={`${result.iterations_used} iter · ${fmtPercent(result.utilization, 1)} MBL`}
+        rows={[
+          ['Utilização', fmtPercent(result.utilization, 2) + ' MBL'],
+          ['Iterações', String(result.iterations_used)],
+          ['H (param.)', fmtForceKN(result.H, 1)],
+        ]}
+        footer={result.message || undefined}
       />
     </div>
   )
+}
+
+/** Formata "123,4 kN · 12,6 tf" numa linha */
+function fmtForcePair(valueN: number): string {
+  return `${fmtForceKN(valueN, 1)} · ${fmtTonfNumber(valueN, 1)} tf`
 }
 
 function MetricCard({
@@ -761,42 +840,42 @@ function MetricCard({
 }) {
   return (
     <Card>
-      <CardContent className="flex h-[88px] flex-col justify-between gap-1 p-3">
+      <CardContent className="flex h-[132px] flex-col gap-1.5 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {label}
         </p>
-        <div className="flex-1 overflow-hidden">
-          {primary && (
-            <div className="flex items-baseline gap-1.5 font-mono tabular-nums leading-none">
-              <span className="text-lg font-semibold tracking-tight">
-                {primary}
+        {primary && (
+          <div className="flex items-baseline gap-1.5 font-mono tabular-nums leading-none">
+            <span className="text-[17px] font-semibold tracking-tight">
+              {primary}
+            </span>
+            {secondary && (
+              <span className="text-[10px] font-normal text-muted-foreground">
+                {secondary}
               </span>
-              {secondary && (
-                <span className="text-[10px] font-normal text-muted-foreground">
-                  {secondary}
+            )}
+          </div>
+        )}
+        {extra}
+        {rows && (
+          <div className="mt-auto space-y-[2px] font-mono text-[10.5px] leading-tight tabular-nums">
+            {rows.map(([k, v]) => (
+              <div
+                key={k}
+                className="flex items-baseline justify-between gap-2"
+              >
+                <span className="shrink-0 text-muted-foreground">{k}</span>
+                <span className="truncate text-right font-medium text-foreground">
+                  {v}
                 </span>
-              )}
-            </div>
-          )}
-          {rows && (
-            <div className="space-y-0 font-mono text-[11px] leading-tight tabular-nums">
-              {rows.map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex items-baseline justify-between gap-2"
-                >
-                  <span className="truncate text-muted-foreground">{k}</span>
-                  <span className="shrink-0 font-medium text-foreground">
-                    {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {extra}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
         {footer && (
-          <p className="font-mono text-[10px] text-muted-foreground">{footer}</p>
+          <p className="mt-1 truncate font-mono text-[9.5px] text-muted-foreground">
+            {footer}
+          </p>
         )}
       </CardContent>
     </Card>

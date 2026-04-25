@@ -66,3 +66,20 @@ export function fmtPercent(value: number, digits = 1): string {
     maximumFractionDigits: digits,
   })}%`
 }
+
+/** Converte radianos para graus e formata com unidade. */
+export function fmtAngleDeg(rad: number, digits = 1): string {
+  const deg = (rad * 180) / Math.PI
+  return `${deg.toLocaleString('pt-BR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}°`
+}
+
+/** Diâmetro formatado em mm (SI → mm comum em catálogo). */
+export function fmtDiameterMM(valueM: number, digits = 1): string {
+  return `${(valueM * 1000).toLocaleString('pt-BR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })} mm`
+}

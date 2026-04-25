@@ -166,6 +166,17 @@ class LineSegment(BaseModel):
         default=None,
         description="Identificador no catálogo (ex.: 'IWRCEIPS', 'R4Studless')",
     )
+    # Metadados geométricos (não entram no cálculo do solver, mas aparecem
+    # em relatórios/memoriais e na UI). Opcionais para retrocompatibilidade.
+    diameter: Optional[float] = Field(
+        default=None, description="Diâmetro nominal (m) — metadado"
+    )
+    dry_weight: Optional[float] = Field(
+        default=None, description="Peso seco por unidade (N/m) — metadado"
+    )
+    modulus: Optional[float] = Field(
+        default=None, description="Módulo axial aparente (Pa) — metadado"
+    )
 
     @field_validator("length", "EA", "MBL")
     @classmethod
