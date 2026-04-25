@@ -89,13 +89,15 @@ function anchorSvg(color: string): string {
 }
 
 function buoySvg(color: string): string {
-  // Boia esférica de amarração com manilha superior. Marca d'água
-  // horizontal sugere flutuação. Viewbox 64×64.
+  // Boia esférica de amarração — corpo NA PARTE DE CIMA, manilha
+  // EMBAIXO. Convenção física: a boia flutua para cima e o pendant
+  // desce dela até a linha principal abaixo, então o ponto de
+  // conexão (manilha) fica na base da boia.
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-    <circle cx="32" cy="36" r="18" fill="${color}" opacity="0.85"/>
-    <line x1="32" y1="18" x2="32" y2="10" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="32" cy="7" r="3.5" fill="none" stroke="${color}" stroke-width="2.5"/>
-    <line x1="14" y1="36" x2="50" y2="36" stroke="#FFFFFF" stroke-width="1.5" opacity="0.55"/>
+    <circle cx="32" cy="28" r="18" fill="${color}" opacity="0.85"/>
+    <line x1="14" y1="28" x2="50" y2="28" stroke="#FFFFFF" stroke-width="1.5" opacity="0.55"/>
+    <line x1="32" y1="46" x2="32" y2="54" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="32" cy="57" r="3.5" fill="none" stroke="${color}" stroke-width="2.5"/>
   </svg>`
 }
 
@@ -112,60 +114,91 @@ function clumpSvg(color: string): string {
 }
 
 /**
- * Mapeia sub-segmentos pós-split (gerados pelo resolver de attachments)
- * de volta aos segmentos originais do usuário. Quando uma boia/clump é
+ * Replica a estrutura pós-split do resolver de attachments do backend
+ * (`backend/solver/attachment_resolver.py`). Quando uma boia/clump é
  * informada via `position_s_from_anchor` e cai no meio de um segmento,
  * o solver divide aquele segmento em dois sub-segmentos do mesmo
- * material — sem isso, attachments mid-segment não funcionariam. Mas
- * para a visualização, o usuário deve ver UM "Seg N" por segmento que
- * ele criou no form, não vários sub-segmentos com cores diferentes.
+ * material para usar a matemática clássica de junções.
  *
- * Retorna `userIdxOf[k]` = índice do segmento original (0..N_user-1)
- * que contém o sub-segmento pós-split `k` (0..N_post-1, anchor-first).
+ * O frontend precisa replicar a mesma lógica para:
+ *   1. Atribuir cores corretas a cada sub-segmento (mapeando ao
+ *      segmento original do usuário) → `userIdxOf`.
+ *   2. Localizar precisamente onde cada attachment está na curva
+ *      renderizada → `attachmentJunctionIdx` (índice em
+ *      segment_boundaries).
  *
- * A lógica espelha exatamente o resolver do backend:
- * `backend/solver/attachment_resolver.py`.
+ * Retorna:
+ *   - userIdxOf[k]: índice do user-segment (0..N_user-1) que contém
+ *     o sub-segmento pós-split k (0..N_post-1, anchor-first).
+ *   - postCum: arc length cumulativo nas junções pós-split, em metros
+ *     (frame anchor-first). postCum[j] é o arc length da âncora até
+ *     a junção j; postCum[0]=0, postCum[N_post]=L_total.
+ *   - attachmentJunctionIdx[i]: para attachment i, qual junção da
+ *     pós-estrutura ele ocupa (1..N_post-1), ou null se posição
+ *     inválida.
  */
-function buildPostSplitMapping(
+function buildPostSplitStructure(
   userSegments: Array<{ length?: number }>,
   attachments?: Array<{
     position_index?: number | null
     position_s_from_anchor?: number | null
   }>,
-): number[] {
+): {
+  userIdxOf: number[]
+  postCum: number[]
+  attachmentJunctionIdx: Array<number | null>
+} {
   const lengths = userSegments.map((s) => s.length ?? 0)
   const cum: number[] = [0]
   for (const L of lengths) cum.push(cum[cum.length - 1]! + L)
   const totalLen = cum[cum.length - 1]!
-
-  // Coleta posições s onde haverá splits (só para position_s_from_anchor
-  // que NÃO coincide com uma junção pré-existente).
   const TOL = 1e-6
+
+  // 1. Calcula a posição canônica (s_from_anchor) de cada attachment.
+  const attsCanonical: Array<number | null> = (attachments ?? []).map((a) => {
+    if (a.position_s_from_anchor != null) return a.position_s_from_anchor
+    if (a.position_index != null) return cum[a.position_index + 1] ?? null
+    return null
+  })
+
+  // 2. Coleta posições que disparam split (não coincidem com junção).
   const splits = new Set<number>()
-  for (const att of attachments ?? []) {
-    let s: number | null = null
-    if (att.position_s_from_anchor != null) {
-      s = att.position_s_from_anchor
-    } else if (att.position_index != null) {
-      s = cum[att.position_index + 1] ?? null
-    }
+  for (const s of attsCanonical) {
     if (s == null || s <= TOL || s >= totalLen - TOL) continue
-    const isAtJunction = cum.some((c) => Math.abs(c - s!) < TOL)
+    const isAtJunction = cum.some((c) => Math.abs(c - s) < TOL)
     if (!isAtJunction) splits.add(s)
   }
   const splitArr = Array.from(splits).sort((a, b) => a - b)
 
-  // Para cada user-segment k, conta quantos splits caem dentro do seu
-  // intervalo (cum[k], cum[k+1]). Cada split adiciona +1 sub-segmento.
-  const out: number[] = []
+  // 3. Constrói lista de sub-segmentos pós-split com mapeamento ao user.
+  const userIdxOf: number[] = []
+  const postCum: number[] = [0]
   for (let k = 0; k < userSegments.length; k += 1) {
     const a = cum[k]!
     const b = cum[k + 1]!
     const internal = splitArr.filter((s) => s > a + TOL && s < b - TOL)
-    const subCount = 1 + internal.length
-    for (let j = 0; j < subCount; j += 1) out.push(k)
+    const breakpoints = [a, ...internal, b]
+    for (let i = 0; i < breakpoints.length - 1; i += 1) {
+      userIdxOf.push(k)
+      postCum.push(breakpoints[i + 1]!)
+    }
   }
-  return out
+
+  // 4. Para cada attachment, encontra sua junção na pós-estrutura por
+  //    matching de arc length.
+  const attachmentJunctionIdx: Array<number | null> = attsCanonical.map(
+    (s) => {
+      if (s == null) return null
+      // junção j em segment_boundaries está em postCum[j] (j=0 é a âncora,
+      // j=N_post é o fairlead; junções intermediárias são 1..N_post-1).
+      for (let j = 1; j < postCum.length - 1; j += 1) {
+        if (Math.abs(postCum[j]! - s) < TOL) return j
+      }
+      return null
+    },
+  )
+
+  return { userIdxOf, postCum, attachmentJunctionIdx }
 }
 
 // Estilo visual por categoria de cabo. Dash + largura comunicam o tipo
@@ -477,10 +510,11 @@ export function CatenaryPlot({
 
       // Quando o resolver divide segmentos por causa de attachments
       // mid-segment, segBounds tem MAIS entradas do que `segments`
-      // (input do usuário). userIdxOf[k] mapeia sub-segmento k
-      // (anchor-first) ao segmento original que o usuário criou —
-      // garante 1 cor/label por segmento do form.
-      const userIdxOf = buildPostSplitMapping(
+      // (input do usuário). buildPostSplitStructure replica a lógica
+      // do resolver e devolve `userIdxOf[k]` (mapeia sub-segmento k
+      // ao segmento original) e `attachmentJunctionIdx[i]` (junção
+      // da pós-estrutura onde o attachment i está).
+      const { userIdxOf } = buildPostSplitStructure(
         (segments ?? []).map((s) => ({
           length: (s as { length?: number }).length,
         })),
@@ -651,11 +685,21 @@ export function CatenaryPlot({
     // markers transparentes no mesmo ponto.
     if (attachments.length > 0 && segBounds.length >= 2) {
       const N = curve.plotX.length
-      // Comprimento não-esticado total do input — usado para mapear
-      // `position_s_from_anchor` (F5.4.6a) numa fração da curva renderizada.
-      const totalUnstretched = (segments ?? []).reduce(
-        (acc, s) => acc + ((s as { length?: number }).length ?? 0),
-        0,
+      // F5.6.7 — usa a estrutura pós-split do resolver para localizar
+      // attachments PRECISAMENTE em segBounds. Cada attachment com
+      // `position_s_from_anchor` cria um split que vira uma junção
+      // exata em segment_boundaries — mapeamos via essa junção em vez
+      // de aproximação proporcional (que era imprecisa quando segmentos
+      // tinham densidades de sampling diferentes).
+      const { attachmentJunctionIdx: attJunctions } = buildPostSplitStructure(
+        (segments ?? []).map((s) => ({
+          length: (s as { length?: number }).length,
+        })),
+        attachments.map((a) => ({
+          position_index: a.position_index,
+          position_s_from_anchor: (a as { position_s_from_anchor?: number | null })
+            .position_s_from_anchor,
+        })),
       )
       const buoyX: number[] = []
       const buoyY: number[] = []
@@ -663,29 +707,26 @@ export function CatenaryPlot({
       const clumpX: number[] = []
       const clumpY: number[] = []
       const clumpText: string[] = []
-      for (const att of attachments) {
+      for (let i = 0; i < attachments.length; i += 1) {
+        const att = attachments[i]!
         let idxPlot: number | null = null
         if (att.position_index != null) {
-          const junctionA = att.position_index + 1
-          if (junctionA <= 0 || junctionA >= segBounds.length) continue
-          const idxAnchorFrame = segBounds[junctionA]!
-          idxPlot = N - 1 - idxAnchorFrame
-        } else if (
-          att.position_s_from_anchor != null && totalUnstretched > 0
-        ) {
-          // Aproximação proporcional: assume sampling razoavelmente
-          // uniforme em arc length na curva renderizada. Erro residual
-          // (devido a stretching elástico e a sampling não-uniforme)
-          // é < 1% para configurações típicas — aceitável p/ visualizar
-          // o ícone, não para análise numérica.
-          const sFromFairlead =
-            totalUnstretched - att.position_s_from_anchor
-          if (sFromFairlead > 0 && sFromFairlead < totalUnstretched) {
-            const frac = sFromFairlead / totalUnstretched
-            idxPlot = Math.max(
-              0,
-              Math.min(N - 1, Math.round(frac * (N - 1))),
-            )
+          // Modo legacy: junção pré-existente. position_index aqui já é
+          // o índice da junção em segments do INPUT — usamos o
+          // attachmentJunctionIdx para obter a junção pós-resolver
+          // equivalente.
+          const junction = attJunctions[i]
+          if (junction != null && junction < segBounds.length) {
+            const idxAnchorFrame = segBounds[junction]!
+            idxPlot = N - 1 - idxAnchorFrame
+          }
+        } else if (att.position_s_from_anchor != null) {
+          // Modo distância (F5.4.6a): a junção foi criada pelo split
+          // EXATAMENTE nessa posição.
+          const junction = attJunctions[i]
+          if (junction != null && junction < segBounds.length) {
+            const idxAnchorFrame = segBounds[junction]!
+            idxPlot = N - 1 - idxAnchorFrame
           }
         }
         if (idxPlot == null) continue
@@ -866,31 +907,24 @@ export function CatenaryPlot({
     const segBounds = result.segment_boundaries ?? []
     if (attachments.length > 0 && segBounds.length >= 2) {
       const N = curve.plotX.length
-      const totalUnstretched = (segments ?? []).reduce(
-        (acc, s) => acc + ((s as { length?: number }).length ?? 0),
-        0,
-      )
-      for (const att of attachments) {
-        let idxPlot: number | null = null
-        if (att.position_index != null) {
-          const junctionA = att.position_index + 1
-          if (junctionA <= 0 || junctionA >= segBounds.length) continue
-          const idxAnchorFrame = segBounds[junctionA]!
-          idxPlot = N - 1 - idxAnchorFrame
-        } else if (
-          att.position_s_from_anchor != null && totalUnstretched > 0
-        ) {
-          const sFromFairlead =
-            totalUnstretched - att.position_s_from_anchor
-          if (sFromFairlead > 0 && sFromFairlead < totalUnstretched) {
-            const frac = sFromFairlead / totalUnstretched
-            idxPlot = Math.max(
-              0,
-              Math.min(N - 1, Math.round(frac * (N - 1))),
-            )
-          }
-        }
-        if (idxPlot == null) continue
+      const { attachmentJunctionIdx: attJunctionsImg } =
+        buildPostSplitStructure(
+          (segments ?? []).map((s) => ({
+            length: (s as { length?: number }).length,
+          })),
+          attachments.map((a) => ({
+            position_index: a.position_index,
+            position_s_from_anchor: (a as {
+              position_s_from_anchor?: number | null
+            }).position_s_from_anchor,
+          })),
+        )
+      for (let i = 0; i < attachments.length; i += 1) {
+        const att = attachments[i]!
+        const junction = attJunctionsImg[i]
+        if (junction == null || junction >= segBounds.length) continue
+        const idxAnchorFrame = segBounds[junction]!
+        const idxPlot = N - 1 - idxAnchorFrame
         const px = curve.plotX[idxPlot]
         const py = curve.plotY[idxPlot]
         if (px == null || py == null) continue
