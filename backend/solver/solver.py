@@ -27,6 +27,7 @@ from .diagnostics import (
     D008_safety_margin,
     D009_anchor_uplift_high,
     D010_high_utilization,
+    D011_cable_below_seabed,
     D900_generic_nonconvergence,
     SolverDiagnostic,
     diagnostic_from_exception,
@@ -424,6 +425,45 @@ def solve(
                     utilization=result.utilization,
                     threshold=0.5,
                     severity="warning",
+                ).model_dump()
+            )
+
+    # F5.7.7 — D011: detecta cabo penetrando o seabed (caso espelho do
+    # D004 boia acima d'água, mas pra clumps puxando o cabo pra baixo).
+    # Convenção solver: anchor em y=0; seabed em y_solver = m·x_solver
+    # (m=tan(slope)); cabo deve estar y ≥ seabed_y. Tolerância 0.5m.
+    if (
+        result.status == ConvergenceStatus.CONVERGED
+        and result.coords_y
+        and result.coords_x
+    ):
+        m_slope = math.tan(seabed.slope_rad)
+        max_penetration = 0.0
+        # Encontra a maior penetração (cabo abaixo do seabed)
+        for cx, cy in zip(result.coords_x, result.coords_y):
+            seabed_y = m_slope * cx
+            penetration = seabed_y - cy
+            if penetration > max_penetration:
+                max_penetration = penetration
+        if max_penetration > 0.5:  # tolerância pra ruído numérico
+            # Tenta atribuir a um clump (o que estiver mais perto do
+            # ponto de penetração). Pega o primeiro clump como heurística;
+            # versão melhor seria localizar o clump exato pelo coord_idx.
+            responsible_idx: int | None = None
+            responsible_name = ""
+            responsible_force = 0.0
+            for idx, att in enumerate(resolved_attachments):
+                if att.kind == "clump_weight":
+                    responsible_idx = idx
+                    responsible_name = att.name or f"Clump #{idx + 1}"
+                    responsible_force = att.submerged_force
+                    break
+            diagnostics_list.append(
+                D011_cable_below_seabed(
+                    depth_below_m=max_penetration,
+                    responsible_clump_index=responsible_idx,
+                    responsible_clump_name=responsible_name,
+                    submerged_force_n=responsible_force,
                 ).model_dump()
             )
 

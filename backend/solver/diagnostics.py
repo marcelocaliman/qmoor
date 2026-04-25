@@ -484,6 +484,76 @@ def D010_high_utilization(
     )
 
 
+def D011_cable_below_seabed(
+    *,
+    depth_below_m: float,
+    responsible_clump_index: int | None = None,
+    responsible_clump_name: str = "",
+    submerged_force_n: float = 0.0,
+) -> SolverDiagnostic:
+    """
+    Cabo penetra o seabed em algum ponto — geometricamente possível
+    pelo solver mas fisicamente inválido (seabed é sólido). Causa
+    típica: clump weight com pendant longo OU força excessiva pra
+    geometria, puxando o cabo abaixo da linha do fundo.
+
+    Quando o clump responsável é identificável, a sugestão sugere
+    reduzir a força. Sem identificação, sugestões qualitativas.
+    """
+    if responsible_clump_index is not None and submerged_force_n > 0:
+        F_atual_te = submerged_force_n / 9806.65
+        # Heurística: corte 10% por metro abaixo do seabed (similar ao
+        # D004 mas mirror)
+        cut_pct = min(0.5, depth_below_m * 0.05 + 0.1)
+        F_max_n = submerged_force_n * (1.0 - cut_pct)
+        F_max_te = F_max_n / 9806.65
+        return SolverDiagnostic(
+            code="D011_CABLE_BELOW_SEABED",
+            severity="error",
+            title=(
+                f"Cabo abaixo do seabed ({depth_below_m:.1f} m) — clump "
+                f"'{responsible_clump_name}'"
+            ),
+            cause=(
+                f"O clump '{responsible_clump_name}' ({F_atual_te:.2f} te) "
+                f"puxa o cabo abaixo do seabed em {depth_below_m:.1f} m. "
+                "Seabed é sólido — não pode ser penetrado. Causa provável: "
+                "força do clump alta demais para a tensão local da linha."
+            ),
+            suggestion=(
+                f"Reduza o peso submerso do clump (estimativa: ≤ "
+                f"{F_max_te:.2f} te), aumente T_fl pra erguer o cabo, ou "
+                "reposicione o clump em região com mais cabo suspenso."
+            ),
+            suggested_changes=[
+                SuggestedChange(
+                    field=f"attachments[{responsible_clump_index}].submerged_force",
+                    value=round(F_max_n, 1),
+                    label=f"Reduzir clump para {F_max_te:.2f} te",
+                ),
+            ],
+            affected_fields=[
+                f"attachments[{responsible_clump_index}].submerged_force",
+            ],
+        )
+    return SolverDiagnostic(
+        code="D011_CABLE_BELOW_SEABED",
+        severity="error",
+        title=f"Cabo abaixo do seabed ({depth_below_m:.1f} m)",
+        cause=(
+            f"Em algum ponto a linha penetra {depth_below_m:.1f} m abaixo "
+            "do seabed. Seabed é sólido — não pode ser penetrado. Causa "
+            "comum: clump weight pesado demais pra tensão local da linha."
+        ),
+        suggestion=(
+            "Reduza o peso submerso de clump weights, aumente T_fl pra "
+            "erguer o cabo, ou reposicione attachments em regiões com "
+            "mais cabo suspenso."
+        ),
+        affected_fields=[],
+    )
+
+
 def D900_generic_nonconvergence(
     *,
     raw_message: str = "",
@@ -547,6 +617,7 @@ __all__ = [
     "D008_safety_margin",
     "D009_anchor_uplift_high",
     "D010_high_utilization",
+    "D011_cable_below_seabed",
     "D900_generic_nonconvergence",
     "SolverDiagnostic",
     "SolverDiagnosticError",
