@@ -869,18 +869,37 @@ export function CatenaryPlot({
       }
     }
 
-    // ── Marker do touchdown (na linha do seabed) ──
-    if (td > 0.5) {
-      // O touchdown sempre fica SOBRE a rampa do seabed. Para slope ≠ 0,
-      // usamos seabedY(plotX) em vez de anchorY fixo, garantindo que o
-      // marcador acompanha a inclinação.
+    // ── Markers de touchdown (todos os pontos de transição) ──
+    // F5.7.5 — com arches no grounded, há MÚLTIPLOS touchdowns: o
+    // touchdown principal vindo do fairlead + 2 touchdowns por arco
+    // (um em cada extremidade onde o cabo descola/encosta no seabed).
+    // Detecta percorrendo onGround[]: cada transição true↔false é um
+    // touchdown. Mantém o `td` (dist_to_first_td) como auxiliar para
+    // o caso single-grounded sem arches (compat).
+    const tdMarkersX: number[] = []
+    const tdMarkersY: number[] = []
+    for (let i = 1; i < curve.onGround.length; i += 1) {
+      if (curve.onGround[i] !== curve.onGround[i - 1]) {
+        // Transição — usa o ponto que está NO seabed (on-ground side)
+        // pra garantir que o marker fique exatamente em y=seabed.
+        const groundIdx = curve.onGround[i] ? i : i - 1
+        tdMarkersX.push(curve.plotX[groundIdx]!)
+        tdMarkersY.push(curve.plotY[groundIdx]!)
+      }
+    }
+    // Fallback: se não detectou nenhum mas td>0 está no result (single
+    // grounded sem arches em sampling esparso), usa o ponto canônico.
+    if (tdMarkersX.length === 0 && td > 0.5) {
       const tdPlotX = Xtotal - td
-      const tdPlotY = seabedY(tdPlotX)
+      tdMarkersX.push(tdPlotX)
+      tdMarkersY.push(seabedY(tdPlotX))
+    }
+    if (tdMarkersX.length > 0) {
       pushTrace({
         type: 'scatter',
         mode: 'markers',
-        x: [tdPlotX],
-        y: [tdPlotY],
+        x: tdMarkersX,
+        y: tdMarkersY,
         marker: {
           symbol: 'diamond',
           size: 11,
@@ -889,7 +908,7 @@ export function CatenaryPlot({
         },
         name: 'Touchdown',
         hovertemplate:
-          `Touchdown<br>x = ${tdPlotX.toFixed(2)} m<br>y = ${tdPlotY.toFixed(2)} m<extra></extra>`,
+          'Touchdown<br>x = %{x:.2f} m<br>y = %{y:.2f} m<extra></extra>',
       })
     }
 
