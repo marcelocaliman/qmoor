@@ -721,6 +721,7 @@ export function CaseFormPage() {
                 previewReady={previewReady}
                 attachments={debouncedValues.attachments ?? []}
                 seabedSlopeRad={debouncedValues.seabed?.slope_rad ?? 0}
+                segments={debouncedValues.segments ?? []}
               />
             </CardContent>
           </Card>
@@ -835,12 +836,17 @@ function PlotArea({
   previewReady,
   attachments,
   seabedSlopeRad,
+  segments,
 }: {
   isFetching: boolean
   result?: SolverResult
   previewReady: boolean
   attachments?: import('@/api/types').LineAttachment[]
   seabedSlopeRad?: number
+  segments?: Array<{
+    category?: 'Wire' | 'StuddedChain' | 'StudlessChain' | 'Polyester' | null
+    line_type?: string | null
+  }>
 }) {
   if (!previewReady && !result) {
     return (
@@ -887,6 +893,7 @@ function PlotArea({
       result={result}
       attachments={attachments}
       seabedSlopeRad={seabedSlopeRad}
+      segments={segments}
     />
   )
 }

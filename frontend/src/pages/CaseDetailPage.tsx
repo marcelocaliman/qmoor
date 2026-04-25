@@ -413,6 +413,7 @@ export function CaseDetailPage() {
                       result={result}
                       attachments={caseInput.attachments ?? []}
                       seabedSlopeRad={caseInput.seabed?.slope_rad ?? 0}
+                      segments={caseInput.segments ?? []}
                     />
                   </CardContent>
                 </Card>

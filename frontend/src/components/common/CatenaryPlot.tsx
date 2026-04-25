@@ -88,6 +88,48 @@ function anchorSvg(color: string): string {
   </svg>`
 }
 
+function buoySvg(color: string): string {
+  // Boia esférica de amarração com manilha superior. Marca d'água
+  // horizontal sugere flutuação. Viewbox 64×64.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+    <circle cx="32" cy="36" r="18" fill="${color}" opacity="0.85"/>
+    <line x1="32" y1="18" x2="32" y2="10" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="32" cy="7" r="3.5" fill="none" stroke="${color}" stroke-width="2.5"/>
+    <line x1="14" y1="36" x2="50" y2="36" stroke="#FFFFFF" stroke-width="1.5" opacity="0.55"/>
+  </svg>`
+}
+
+function clumpSvg(color: string): string {
+  // Bloco de peso (concreto/aço) com manilha de içamento no topo.
+  // Pequenos chanfros nos cantos para sugerir massa pesada.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+    <circle cx="32" cy="10" r="3.5" fill="none" stroke="${color}" stroke-width="2.5"/>
+    <line x1="32" y1="13.5" x2="32" y2="22" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M 14 24 L 50 24 L 52 50 Q 32 56 12 50 Z" fill="${color}" opacity="0.85"/>
+    <line x1="20" y1="34" x2="44" y2="34" stroke="#FFFFFF" stroke-width="1" opacity="0.55"/>
+    <line x1="20" y1="42" x2="44" y2="42" stroke="#FFFFFF" stroke-width="1" opacity="0.55"/>
+  </svg>`
+}
+
+// Estilo visual por categoria de cabo. Dash + largura comunicam o tipo
+// de material (corrente x cabo de aço x sintético) mesmo em B&W. A cor
+// fica por conta de uma paleta indexada pelo segmento (ver `segPalette`).
+type CableDash = 'solid' | 'dash' | 'dot' | 'dashdot'
+const CATEGORY_STYLE: Record<
+  string,
+  { dash: CableDash; width: number; label: string }
+> = {
+  Wire: { dash: 'solid', width: 3, label: 'Wire' },
+  StuddedChain: { dash: 'solid', width: 5, label: 'Studded chain' },
+  StudlessChain: { dash: 'dash', width: 4.5, label: 'Studless chain' },
+  Polyester: { dash: 'dot', width: 3, label: 'Poliéster' },
+}
+
+export interface SegmentMeta {
+  category?: 'Wire' | 'StuddedChain' | 'StudlessChain' | 'Polyester' | null
+  line_type?: string | null
+}
+
 export interface CatenaryPlotProps {
   result: SolverResult
   /**
@@ -99,7 +141,8 @@ export interface CatenaryPlotProps {
   equalAspect?: boolean
   /**
    * Attachments aplicados (boias e clumps). F5.2. Renderizados como
-   * marcadores nas junções entre segmentos.
+   * ícones SVG nas junções entre segmentos (markers transparentes só
+   * para hover).
    */
   attachments?: LineAttachment[]
   /**
@@ -107,6 +150,13 @@ export interface CatenaryPlotProps {
    * Positivo = seabed sobe em direção ao fairlead.
    */
   seabedSlopeRad?: number
+  /**
+   * Metadados dos segmentos (na mesma ordem do solver: idx 0 = junto à
+   * âncora). Quando informado em modo multi-segmento, controla o estilo
+   * visual da linha por categoria (dash/largura) e exibe o `line_type`
+   * na legenda.
+   */
+  segments?: SegmentMeta[]
 }
 
 /**
@@ -132,6 +182,7 @@ export function CatenaryPlot({
   equalAspect = false,
   attachments = [],
   seabedSlopeRad = 0,
+  segments = [],
 }: CatenaryPlotProps) {
   const fillContainer = height == null
   const plotStyle: React.CSSProperties = fillContainer
@@ -158,6 +209,8 @@ export function CatenaryPlot({
         hoverBorder: '#334155',
         iconColor: '#93C5FD',
         anchorIconColor: '#94A3B8',
+        buoyIconColor: '#3B82F6',
+        clumpIconColor: '#FBBF24',
       }
     }
     return {
@@ -176,6 +229,8 @@ export function CatenaryPlot({
       hoverBorder: '#E2E8F0',
       iconColor: '#1E3A5F',
       anchorIconColor: '#475569',
+      buoyIconColor: '#0EA5E9',
+      clumpIconColor: '#D97706',
     }
   }, [theme])
 
@@ -345,16 +400,30 @@ export function CatenaryPlot({
         const sy = curve.plotY.slice(startF, endF + 1)
         const st = curve.tensions.slice(startF, endF + 1)
         const segIdx = (segBounds.length - 2) - s  // segmento original 0..N-1
+        const meta = segments[segIdx]
+        const catStyle =
+          (meta?.category && CATEGORY_STYLE[meta.category]) ||
+          { dash: 'solid', width: 3.5, label: 'Cabo' }
+        const labelParts = [`Seg ${segIdx + 1}`]
+        if (meta?.line_type) labelParts.push(meta.line_type)
+        if (meta?.category && CATEGORY_STYLE[meta.category]) {
+          labelParts.push(CATEGORY_STYLE[meta.category]!.label)
+        }
+        const traceName = labelParts.join(' · ')
         traces.push({
           type: 'scatter',
           mode: 'lines',
           x: sx,
           y: sy,
-          line: { color: segPalette[segIdx % segPalette.length]!, width: 3.5 },
-          name: `Segmento ${segIdx + 1}`,
+          line: {
+            color: segPalette[segIdx % segPalette.length]!,
+            width: catStyle.width,
+            dash: catStyle.dash,
+          },
+          name: traceName,
           text: st.map((t) => `|T| = ${(t / 1000).toFixed(1)} kN`),
           hovertemplate:
-            `Seg ${segIdx + 1}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<br>%{text}<extra></extra>`,
+            `${traceName}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<br>%{text}<extra></extra>`,
         })
       }
     } else {
@@ -438,11 +507,11 @@ export function CatenaryPlot({
         `T_anc = ${(result.anchor_tension / 1000).toFixed(1)} kN<extra></extra>`,
     })
 
-    // ── Marcadores de attachments (boias e clumps, F5.2) ──
-    // Cada attachment fica na junção `position_index` entre seg i e seg i+1.
-    // No frame anchor-first (solver), a junção j corresponde ao índice
-    // segment_boundaries[j+1]. Após reverse() ela vai para
-    // (N - 1 - segment_boundaries[j+1]) no frame fairlead-first do plot.
+    // ── Hover invisível em attachments (boias e clumps, F5.2) ──
+    // Posições computadas aqui; ícones SVG são adicionados via layout.images
+    // (mesmo esquema da âncora/fairlead) para terem aparência gráfica
+    // consistente. Plotly não captura hover em images, então deixamos
+    // markers transparentes no mesmo ponto.
     if (attachments.length > 0 && segBounds.length >= 2) {
       const N = curve.plotX.length
       const buoyX: number[] = []
@@ -478,14 +547,10 @@ export function CatenaryPlot({
           mode: 'markers',
           x: buoyX,
           y: buoyY,
-          marker: {
-            symbol: 'circle',
-            size: 14,
-            color: theme === 'dark' ? '#3B82F6' : '#0EA5E9',
-            line: { color: '#FFFFFF', width: 2 },
-          },
+          marker: { size: 22, color: 'rgba(0,0,0,0)' },
           name: 'Boia',
           text: buoyText,
+          showlegend: false,
           hovertemplate: '%{text}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<extra></extra>',
         })
       }
@@ -495,14 +560,10 @@ export function CatenaryPlot({
           mode: 'markers',
           x: clumpX,
           y: clumpY,
-          marker: {
-            symbol: 'square',
-            size: 14,
-            color: theme === 'dark' ? '#FBBF24' : '#D97706',
-            line: { color: '#FFFFFF', width: 2 },
-          },
+          marker: { size: 22, color: 'rgba(0,0,0,0)' },
           name: 'Clump weight',
           text: clumpText,
+          showlegend: false,
           hovertemplate: '%{text}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<extra></extra>',
         })
       }
@@ -550,7 +611,7 @@ export function CatenaryPlot({
     theme,
   ])
 
-  // ── Imagens SVG sobrepostas (fairlead + âncora) ──
+  // ── Imagens SVG sobrepostas (fairlead + âncora + attachments) ──
   // Tamanho proporcional ao range do menor eixo, para não dominar o canvas.
   const images = useMemo(() => {
     const xSpan = ranges.xRange[1]! - ranges.xRange[0]!
@@ -558,7 +619,11 @@ export function CatenaryPlot({
     // ícone de ~9% do menor span; assim ele não some quando a água é rasa nem
     // estoura quando o trecho horizontal é longo.
     const iconBase = Math.min(xSpan, ySpan) * 0.09
-    return [
+    // Attachments (boias e clumps) ficam um pouco menores (~70%) que os
+    // ícones de fairlead/âncora para não dominar a curva da linha.
+    const attIcon = iconBase * 0.7
+
+    const imgs: Record<string, unknown>[] = [
       {
         source: svgDataUri(fairleadSvg(palette.iconColor)),
         xref: 'x',
@@ -584,7 +649,39 @@ export function CatenaryPlot({
         layer: 'above',
       },
     ]
-  }, [ranges, palette, fairleadY, anchorY, Xtotal])
+
+    // Posiciona ícones SVG nas junções onde há boia ou clump.
+    const segBounds = result.segment_boundaries ?? []
+    if (attachments.length > 0 && segBounds.length >= 2) {
+      const N = curve.plotX.length
+      for (const att of attachments) {
+        const junctionA = att.position_index + 1
+        if (junctionA <= 0 || junctionA >= segBounds.length) continue
+        const idxAnchorFrame = segBounds[junctionA]!
+        const idxPlot = N - 1 - idxAnchorFrame
+        const px = curve.plotX[idxPlot]
+        const py = curve.plotY[idxPlot]
+        if (px == null || py == null) continue
+        const svg =
+          att.kind === 'buoy'
+            ? buoySvg(palette.buoyIconColor)
+            : clumpSvg(palette.clumpIconColor)
+        imgs.push({
+          source: svgDataUri(svg),
+          xref: 'x',
+          yref: 'y',
+          x: px,
+          y: py,
+          sizex: attIcon,
+          sizey: attIcon,
+          xanchor: 'center',
+          yanchor: 'middle',
+          layer: 'above',
+        })
+      }
+    }
+    return imgs
+  }, [ranges, palette, fairleadY, anchorY, Xtotal, attachments, curve, result.segment_boundaries])
 
   // ── Annotations: rótulos dos pontos ──
   const annotations = useMemo(
@@ -699,16 +796,29 @@ export function CatenaryPlot({
     const hasGrounded = (result.total_grounded_length ?? 0) > 0
     const hasSuspended = (result.total_suspended_length ?? 0) > 0
     const hasTouchdown = (result.dist_to_first_td ?? 0) > 0.5
+    const hasBuoy = attachments.some((a) => a.kind === 'buoy')
+    const hasClump = attachments.some((a) => a.kind === 'clump_weight')
 
     if (isMulti) {
       const segPaletteLight = ['#1E3A5F', '#D97706', '#047857', '#7C3AED', '#BE185D']
       const segPaletteDark = ['#60A5FA', '#FBBF24', '#34D399', '#A78BFA', '#F472B6']
       const segPalette = theme === 'dark' ? segPaletteDark : segPaletteLight
       for (let s = 0; s < segBounds.length - 1; s += 1) {
+        const meta = segments[s]
+        const catStyle =
+          (meta?.category && CATEGORY_STYLE[meta.category]) ||
+          { dash: 'solid', width: 3.5, label: 'Cabo' }
+        const labelParts = [`Seg ${s + 1}`]
+        if (meta?.line_type) labelParts.push(meta.line_type)
+        else if (meta?.category && CATEGORY_STYLE[meta.category]) {
+          labelParts.push(CATEGORY_STYLE[meta.category]!.label)
+        }
         items.push({
           kind: 'line',
           color: segPalette[s % segPalette.length]!,
-          label: `Segmento ${s + 1}`,
+          label: labelParts.join(' · '),
+          dash: catStyle.dash,
+          width: catStyle.width,
         })
       }
     } else {
@@ -729,6 +839,20 @@ export function CatenaryPlot({
       svg: anchorSvg(palette.anchorIconColor),
       label: 'Âncora',
     })
+    if (hasBuoy) {
+      items.push({
+        kind: 'svg',
+        svg: buoySvg(palette.buoyIconColor),
+        label: 'Boia',
+      })
+    }
+    if (hasClump) {
+      items.push({
+        kind: 'svg',
+        svg: clumpSvg(palette.clumpIconColor),
+        label: 'Clump weight',
+      })
+    }
     if (hasTouchdown) {
       items.push({
         kind: 'diamond',
@@ -737,7 +861,7 @@ export function CatenaryPlot({
       })
     }
     return items
-  }, [result, palette, theme])
+  }, [result, palette, theme, attachments, segments])
 
   return (
     <div className="relative h-full w-full">
@@ -768,15 +892,18 @@ interface LegendItem {
   label: string
   color?: string
   svg?: string
+  dash?: string
+  width?: number
 }
 
 function LegendChip({ item }: { item: LegendItem }) {
   return (
     <span className="flex items-center gap-1.5">
       {item.kind === 'line' && (
-        <span
-          className="inline-block h-[3px] w-5 rounded-full"
-          style={{ backgroundColor: item.color }}
+        <LegendLineSwatch
+          color={item.color ?? 'currentColor'}
+          dash={item.dash ?? 'solid'}
+          width={item.width ?? 3}
         />
       )}
       {item.kind === 'diamond' && (
@@ -793,5 +920,47 @@ function LegendChip({ item }: { item: LegendItem }) {
       )}
       <span className="text-foreground">{item.label}</span>
     </span>
+  )
+}
+
+/**
+ * Mostra um traço com dash/largura sincronizados ao trace Plotly. Usa
+ * SVG inline (em vez de border-style) porque CSS não tem dotted/dashed
+ * que case com os nomes do Plotly ('dash', 'dot') de forma idêntica.
+ */
+function LegendLineSwatch({
+  color,
+  dash,
+  width,
+}: {
+  color: string
+  dash: string
+  width: number
+}) {
+  // Mapeia dash strings do Plotly (solid|dash|dot|dashdot) para
+  // stroke-dasharray do SVG. Ajustado para um swatch de 22px de largura.
+  const dasharray =
+    dash === 'dash' ? '5 3' : dash === 'dot' ? '1.5 2.5' : dash === 'dashdot' ? '5 2 1 2' : undefined
+  // Largura visual reduzida (Plotly width 5 → ~3px no swatch).
+  const strokeW = Math.max(1.5, Math.min(width * 0.65, 4))
+  return (
+    <svg
+      width={22}
+      height={6}
+      viewBox="0 0 22 6"
+      className="inline-block shrink-0"
+      aria-hidden
+    >
+      <line
+        x1={1}
+        y1={3}
+        x2={21}
+        y2={3}
+        stroke={color}
+        strokeWidth={strokeW}
+        strokeDasharray={dasharray}
+        strokeLinecap="round"
+      />
+    </svg>
   )
 }
