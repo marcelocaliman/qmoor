@@ -558,18 +558,118 @@ class MooringSystemResult(BaseModel):
     solver_version: str = Field(default="")
 
 
+# ───────────────────────────────────────────────────────────────────────
+# F5.5 — Equilíbrio de plataforma sob carga ambiental
+# ───────────────────────────────────────────────────────────────────────
+
+
+class EnvironmentalLoad(BaseModel):
+    """
+    Carga ambiental sobre a plataforma (F5.5).
+
+    Resultante horizontal de vento + corrente + onda média (1ª ordem).
+    Convenção: força ATUANDO na plataforma; o solver acha o offset
+    (Δx, Δy) tal que a soma das forças das linhas restauradoras + Fenv
+    seja zero.
+
+    `Mz` (momento em torno do eixo vertical) fica reservado mas não é
+    usado no MVP — para isso seria preciso modelar fairleads não-radiais
+    ou tomar yaw como graus de liberdade adicional.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    Fx: float = Field(
+        default=0.0,
+        description="Componente X da carga ambiental (N) no frame da plataforma.",
+    )
+    Fy: float = Field(
+        default=0.0,
+        description="Componente Y da carga ambiental (N) no frame da plataforma.",
+    )
+    Mz: float = Field(
+        default=0.0,
+        description=(
+            "Momento em torno do eixo Z (N·m). Reservado — não usado "
+            "no MVP atual (mooring radial; M_z sempre 0 em equilíbrio)."
+        ),
+    )
+
+    @property
+    def magnitude(self) -> float:
+        return (self.Fx**2 + self.Fy**2) ** 0.5
+
+
+class PlatformEquilibriumResult(BaseModel):
+    """
+    Resultado do solver de equilíbrio de plataforma (F5.5).
+
+    Para uma carga ambiental dada, o solver encontra o offset
+    (Δx, Δy) da plataforma e resolve cada linha na geometria
+    deslocada. Cada `MooringLineResult` aqui reflete a tensão e o
+    perfil resultante da linha NA POSIÇÃO de equilíbrio (não no
+    baseline).
+
+    `restoring_force_xy` é a soma vetorial das forças horizontais das
+    linhas no offset de equilíbrio. Em equilíbrio perfeito,
+    `restoring_force_xy + (env.Fx, env.Fy) ≈ 0` (resíduo numérico).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    environmental_load: EnvironmentalLoad
+    offset_xy: tuple[float, float] = Field(
+        ...,
+        description=(
+            "Offset da plataforma a partir da posição neutra (m). "
+            "Positivo na direção do empurrão da carga ambiental."
+        ),
+    )
+    offset_magnitude: float = Field(..., ge=0.0)
+    offset_azimuth_deg: float = Field(default=0.0, ge=0.0, lt=360.0)
+
+    lines: list[MooringLineResult]
+
+    restoring_force_xy: tuple[float, float] = Field(
+        ...,
+        description=(
+            "Soma vetorial das forças das linhas no offset de equilíbrio "
+            "(N). Em equilíbrio com Fenv, `restoring + env_force ≈ 0`."
+        ),
+    )
+    residual_magnitude: float = Field(
+        default=0.0, ge=0.0,
+        description=(
+            "‖Σ F_linhas + F_env‖ no offset final (N). Mede a qualidade "
+            "da convergência; valores típicos < 10 N."
+        ),
+    )
+    iterations: int = Field(default=0, ge=0)
+    converged: bool = Field(default=False)
+    message: str = Field(default="")
+
+    max_utilization: float = Field(default=0.0, ge=0.0)
+    worst_alert_level: AlertLevel = Field(default=AlertLevel.OK)
+    n_converged: int = Field(default=0, ge=0)
+    n_invalid: int = Field(default=0, ge=0)
+
+    solver_version: str = Field(default="")
+
+
 __all__ = [
     "AlertLevel",
     "AttachmentKind",
     "BoundaryConditions",
     "ConvergenceStatus",
     "CriteriaProfile",
+    "EnvironmentalLoad",
     "LineAttachment",
     "LineCategory",
     "LineSegment",
     "MooringLineResult",
     "MooringSystemResult",
     "PROFILE_LIMITS",
+    "PlatformEquilibriumResult",
     "SeabedConfig",
     "SolutionMode",
     "SolverConfig",
