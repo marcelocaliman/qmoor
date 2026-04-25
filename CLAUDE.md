@@ -25,7 +25,7 @@ Este é um projeto de aplicação web pessoal para análise estática de linhas 
 - ✅ F5.1 — Multi-segmento (concluída)
 - ✅ F5.2 — Attachments (boias e clumps)
 - ✅ F5.3 — Seabed inclinado + batimetria (concluída)
-- ⏳ F5.4 — Sistema multi-linha (mooring system); F5.4.1 schema+persistência ✅, próximo é F5.4.2 solver/agregação. Ver `docs/relatorio_F5_4.md`.
+- ✅ F5.4 — Sistema multi-linha (mooring system) — encerrada. Schema + solver dispatcher + frontend completo (lista/detail/form/plan view) + PDF report + comparação multi-sistema. Ver `docs/relatorio_F5_4.md`.
 
 ### Documentação de referência (ordem de leitura recomendada)
 
