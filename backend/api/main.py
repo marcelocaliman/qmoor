@@ -20,18 +20,27 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.db import session as db_session
 from backend.api.db.migrations import run_migrations
+from backend.api.logging_config import configure_logging
 from backend.api.routers import cases, health, line_types, moor_io, reports, solve
 from backend.api.schemas.errors import ErrorDetail, ErrorResponse
 
+# Logging estruturado: console + arquivo rotativo. Configurado uma única
+# vez no import do módulo (idempotente).
+configure_logging()
 logger = logging.getLogger("qmoor.api")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+
+# Rate limit global: 100 req/min por IP. Mesmo em localhost a barreira é
+# útil para detectar loops acidentais (ex.: useEffect mal configurado no
+# frontend) sem precisar tirar o servidor do ar.
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 
 @asynccontextmanager
@@ -128,6 +137,12 @@ def _create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type"],
     )
+
+    # Rate limit middleware: aplica o `default_limits` do `limiter` em todas
+    # as rotas. Endpoints individuais podem sobrescrever via decorator.
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     _register_exception_handlers(app)
     _register_routers(app)

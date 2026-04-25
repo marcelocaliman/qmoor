@@ -14,3 +14,4 @@ moorpy
 reportlab
 httpx
 pypdf
+slowapi

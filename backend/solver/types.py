@@ -337,6 +337,13 @@ class SolverResult(BaseModel):
     water_depth: float = 0.0
     startpoint_depth: float = 0.0
 
+    # --- Auditoria ---
+    # Versão do solver que produziu este resultado. Permite identificar,
+    # em uma execução antiga, qual conjunto de regras numéricas/limites foi
+    # usado. Default vazio para compatibilidade com testes que constroem
+    # SolverResult manualmente. O facade solve() preenche sempre.
+    solver_version: str = ""
+
 
 __all__ = [
     "AlertLevel",

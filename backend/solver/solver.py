@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 from typing import Optional, Sequence
 
+from . import SOLVER_VERSION
 from .elastic import solve_elastic_iterative
 from .laid_line import solve_laid_line
 from .types import (
@@ -133,6 +134,9 @@ def solve(
         return SolverResult(
             status=ConvergenceStatus.INVALID_CASE,
             message=f"Validação falhou: {exc}",
+            water_depth=boundary.h,
+            startpoint_depth=boundary.startpoint_depth,
+            solver_version=SOLVER_VERSION,
         )
 
     # Drop vertical efetivo: distância entre a âncora (no seabed, y=-h)
@@ -167,27 +171,36 @@ def solve(
                 MBL=segment.MBL,
             )
     except ValueError as exc:
+        # Erros físicos previsíveis — incrementamos com sugestões concretas
+        # de correção (em vez de só "INVALID_CASE: <texto técnico>").
+        friendly = _friendly_invalid_message(str(exc), segment, boundary)
         return SolverResult(
             status=ConvergenceStatus.INVALID_CASE,
-            message=f"Caso inviável: {exc}",
+            message=friendly,
             water_depth=boundary.h,
             startpoint_depth=boundary.startpoint_depth,
+            solver_version=SOLVER_VERSION,
         )
     except Exception as exc:  # noqa: BLE001
         # Erros numéricos (overflow, div/0) caem aqui.
         return SolverResult(
             status=ConvergenceStatus.NUMERICAL_ERROR,
-            message=f"Erro numérico: {exc}",
+            message=(
+                f"Erro numérico interno do solver: {exc}. "
+                "Tente alterar levemente os parâmetros (ex.: ±1 % no T_fl ou L)."
+            ),
             water_depth=boundary.h,
             startpoint_depth=boundary.startpoint_depth,
+            solver_version=SOLVER_VERSION,
         )
 
-    # Anexa os parâmetros geométricos globais para o plot reconstruir o
-    # sistema de coordenadas surface-relative (superfície em y=0, seabed
-    # em y=-water_depth, fairlead em y=-startpoint_depth).
+    # Anexa os parâmetros geométricos globais + versão do solver para o plot
+    # reconstruir o sistema de coordenadas surface-relative (superfície em
+    # y=0, seabed em y=-water_depth, fairlead em y=-startpoint_depth).
     result = result.model_copy(update={
         "water_depth": boundary.h,
         "startpoint_depth": boundary.startpoint_depth,
+        "solver_version": SOLVER_VERSION,
     })
 
     # Pós-classificação (Camada 7 + alert_level da Seção 5 Documento A).
@@ -251,6 +264,86 @@ def solve(
         )
 
     return result
+
+
+def _friendly_invalid_message(
+    raw: str, segment: LineSegment, boundary: BoundaryConditions,
+) -> str:
+    """
+    Converte uma mensagem técnica do solver em uma mensagem prática para o
+    engenheiro, com sugestão de correção concreta sempre que possível.
+
+    Cobre os erros mais comuns que aparecem na prática:
+      - T_fl ≤ w·h  → linha não sustenta a coluna d'água
+      - L ≤ √(X² + h²) (rígido)  → linha mais curta que a distância taut
+      - L ≤ h (modo Tension)  → linha mais curta que a lâmina
+      - Strain > 5%  → input em unidade errada
+      - X < L (modo Range, laid line)  → X menor que o cabo
+      - "linha rompida" (T_fl ≥ MBL)  → MBL excedido
+
+    Para erros não reconhecidos, devolve o original prefixado com "Caso
+    inviável:".
+    """
+    h = boundary.h
+    L = segment.length
+    w = segment.w
+    MBL = segment.MBL
+    raw_lower = raw.lower()
+
+    # Heurística 1: T_fl insuficiente para sustentar coluna d'água
+    if "insuficiente para sustentar" in raw_lower or "t_fl=" in raw_lower and "w·h" in raw:
+        wh = w * h
+        return (
+            f"T_fl insuficiente: a tração no fairlead não sustenta o peso "
+            f"da coluna d'água até o fairlead (w·h ≈ {wh / 1000:.1f} kN). "
+            "Aumente T_fl, reduza a lâmina d'água, ou use um cabo mais leve."
+        )
+
+    # Heurística 2: comprimento curto para a distância pedida
+    if "linha mais curta que a lâmina" in raw_lower or "fairlead inalcançável" in raw_lower:
+        return (
+            f"Linha curta demais: o comprimento ({L:.0f} m) é menor ou igual "
+            f"à lâmina d'água ({h:.0f} m). "
+            "Aumente o comprimento da linha para pelo menos h + margem."
+        )
+
+    # Heurística 3: X >= X_max (modo Range, geometria impossível sem elasticidade)
+    if "x_max" in raw_lower or "linha rígida" in raw_lower or "não alcança" in raw_lower:
+        return (
+            "Distância horizontal X excede o máximo geométrico √(L² − h²). "
+            "A linha precisaria esticar mais do que o EA permite. "
+            "Reduza X (ou aumente o comprimento da linha)."
+        )
+
+    # Heurística 4: strain implausível → unidade errada
+    if "strain final" in raw_lower or "implaus" in raw_lower:
+        return (
+            f"{raw}\n"
+            f"Verificações sugeridas: w deve estar em N/m (não kgf/m), "
+            f"EA em N (não te). Se você importou de um .moor antigo, "
+            "use o seletor de unidades para conferir os valores."
+        )
+
+    # Heurística 5: rompimento (utilization > broken_ratio)
+    if "linha rompida" in raw_lower or "broken_ratio" in raw_lower:
+        return (
+            f"{raw} O fairlead está sob T = {boundary.input_value / 1000:.1f} kN, "
+            f"acima do MBL ({MBL / 1000:.1f} kN). "
+            "Reduza T_fl, troque por um cabo de MBL maior ou alivie a geometria."
+        )
+
+    # Heurística 6: X < L em laid line
+    if "x" in raw_lower and "compactar" in raw_lower:
+        return (
+            f"X ({boundary.input_value:.0f} m) menor que o comprimento da linha "
+            f"({L:.0f} m): isso exigiria compressão axial, fisicamente impossível. "
+            "Aumente X ou reduza L."
+        )
+
+    # Fallback: prepend "Caso inviável:" sem repetir se já vier
+    if raw_lower.startswith("caso"):
+        return raw
+    return f"Caso inviável: {raw}"
 
 
 __all__ = ["solve"]

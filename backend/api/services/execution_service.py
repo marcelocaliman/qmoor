@@ -7,12 +7,14 @@ e aplica a política de retenção (10 mais recentes por caso).
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.api.db.models import CaseRecord, ExecutionRecord
+from backend.api.logging_config import log_solver_execution
 from backend.api.schemas.cases import CaseInput
 from backend.api.services.case_service import CaseNotFound, get_case
 from backend.solver.solver import solve as solver_solve
@@ -36,8 +38,9 @@ def run_solve_and_persist(
     rec = get_case(db, case_id)  # CaseNotFound propaga
     case_input = CaseInput.model_validate_json(rec.input_json)
 
-    # Invoca o solver (nunca crasha — sempre retorna SolverResult)
-    segment = case_input.segments[0]  # MVP v1
+    # Invoca o solver (nunca crasha — sempre retorna SolverResult).
+    # Cronometra para o log estruturado de auditoria.
+    t0 = time.perf_counter()
     result = solver_solve(
         line_segments=case_input.segments,
         boundary=case_input.boundary,
@@ -45,6 +48,7 @@ def run_solve_and_persist(
         criteria_profile=case_input.criteria_profile,
         user_limits=case_input.user_defined_limits,
     )
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     exec_rec = ExecutionRecord(
         case_id=case_id,
@@ -60,13 +64,15 @@ def run_solve_and_persist(
     db.add(exec_rec)
     db.commit()
     db.refresh(exec_rec)
-    logger.info(
-        "solve case_id=%s status=%s alert=%s T_fl=%.1f X=%.1f",
-        case_id,
-        result.status.value,
-        result.alert_level.value,
-        result.fairlead_tension,
-        result.total_horz_distance,
+
+    # Log estruturado em arquivo rotativo + console (para grep/awk pós-fato).
+    log_solver_execution(
+        case_id=case_id,
+        status=result.status.value,
+        iterations=result.iterations_used,
+        elapsed_ms=elapsed_ms,
+        alert_level=result.alert_level.value,
+        message=result.message,
     )
 
     _enforce_retention(db, case_id)
