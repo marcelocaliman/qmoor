@@ -24,6 +24,7 @@ import {
 import type { LineTypeOutput, SolverResult } from '@/api/types'
 import { CatenaryPlot } from '@/components/common/CatenaryPlot'
 import { LineTypePicker } from '@/components/common/LineTypePicker'
+import { UnitInput } from '@/components/common/UnitInput'
 import {
   AlertBadge,
   StatusBadge,
@@ -58,12 +59,12 @@ import {
   cn,
   fmtAngleDeg,
   fmtDiameterMM,
-  fmtForceKN,
   fmtMeters,
   fmtNumber,
   fmtPercent,
-  fmtTonfNumber,
 } from '@/lib/utils'
+import { fmtForce, fmtForcePair as fmtForcePairUnits } from '@/lib/units'
+import { useUnitsStore } from '@/store/units'
 
 /**
  * Layout vertical: form compacto no topo (3 blocos em grid) +
@@ -134,16 +135,39 @@ export function CaseFormPage() {
     [debouncedValues],
   )
 
+  /**
+   * Preview-ready: somente os campos que entram no solver. Evita que o
+   * gráfico fique bloqueado só porque o usuário ainda não preencheu o
+   * nome do caso (que é exigência só pra persistir).
+   */
+  const previewReady = useMemo(() => {
+    const seg = debouncedValues.segments?.[0]
+    const b = debouncedValues.boundary
+    if (!seg || !b) return false
+    if (!(seg.length > 0) || !(seg.w > 0) || !(seg.EA > 0) || !(seg.MBL > 0))
+      return false
+    if (!(b.h > 0) || !(b.input_value > 0)) return false
+    if ((debouncedValues.seabed?.mu ?? -1) < 0) return false
+    if (
+      debouncedValues.criteria_profile === 'UserDefined' &&
+      !debouncedValues.user_defined_limits
+    )
+      return false
+    return true
+  }, [debouncedValues])
+
   const previewQuery = useQuery<SolverResult, ApiError>({
     queryKey: ['solve-preview', previewKey],
     queryFn: () => {
       const payload = {
         ...debouncedValues,
+        // Backend exige name não vazio mesmo no preview — usa placeholder.
+        name: debouncedValues.name?.trim() || 'preview',
         description: debouncedValues.description?.trim() || null,
       }
       return previewSolve(payload as never)
     },
-    enabled: isValid,
+    enabled: previewReady,
     retry: false,
     staleTime: 30_000,
   })
@@ -243,7 +267,7 @@ export function CaseFormPage() {
       <PreviewStatusChip
         isFetching={previewQuery.isFetching}
         result={previewQuery.data}
-        formInvalid={!isValid}
+        previewReady={previewReady}
       />
       <Button variant="ghost" size="sm" asChild>
         <Link to={isEdit ? `/cases/${id}` : '/cases'}>Cancelar</Link>
@@ -366,38 +390,64 @@ export function CaseFormPage() {
                     )}
                   />
                 </InlineField>
-                <InlineField label="Peso submerso" unit="N/m">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...register('segments.0.w', { valueAsNumber: true })}
-                    className="h-8 font-mono"
+                <InlineField label="Peso submerso">
+                  <Controller
+                    control={control}
+                    name="segments.0.w"
+                    render={({ field }) => (
+                      <UnitInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        quantity="force_per_m"
+                        digits={2}
+                        className="h-8"
+                      />
+                    )}
                   />
                 </InlineField>
-                <InlineField label="Peso seco" unit="N/m">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...register('segments.0.dry_weight', {
-                      valueAsNumber: true,
-                    })}
-                    className="h-8 font-mono"
+                <InlineField label="Peso seco">
+                  <Controller
+                    control={control}
+                    name="segments.0.dry_weight"
+                    render={({ field }) => (
+                      <UnitInput
+                        value={field.value ?? null}
+                        onChange={field.onChange}
+                        quantity="force_per_m"
+                        digits={2}
+                        className="h-8"
+                      />
+                    )}
                   />
                 </InlineField>
-                <InlineField label="EA" unit="N">
-                  <Input
-                    type="number"
-                    step="100000"
-                    {...register('segments.0.EA', { valueAsNumber: true })}
-                    className="h-8 font-mono"
+                <InlineField label="EA">
+                  <Controller
+                    control={control}
+                    name="segments.0.EA"
+                    render={({ field }) => (
+                      <UnitInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        quantity="force"
+                        digits={2}
+                        className="h-8"
+                      />
+                    )}
                   />
                 </InlineField>
-                <InlineField label="MBL" unit="N" className="col-span-2">
-                  <Input
-                    type="number"
-                    step="1000"
-                    {...register('segments.0.MBL', { valueAsNumber: true })}
-                    className="h-8 font-mono"
+                <InlineField label="MBL" className="col-span-2">
+                  <Controller
+                    control={control}
+                    name="segments.0.MBL"
+                    render={({ field }) => (
+                      <UnitInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        quantity="force"
+                        digits={2}
+                        className="h-8"
+                      />
+                    )}
                   />
                 </InlineField>
                 <InlineField label="Módulo" unit="Pa">
@@ -415,11 +465,30 @@ export function CaseFormPage() {
           {/* Condições de contorno + Seabed */}
           <Section title="Condições">
             <div className="grid grid-cols-2 gap-2">
-              <InlineField label="Lâmina" unit="m">
+              <InlineField
+                label="Lâmina d'água"
+                unit="m"
+                tooltip="Profundidade do seabed a partir da superfície"
+              >
                 <Input
                   type="number"
                   step="1"
                   {...register('boundary.h', { valueAsNumber: true })}
+                  className="h-8 font-mono"
+                />
+              </InlineField>
+              <InlineField
+                label="Prof. fairlead"
+                unit="m"
+                tooltip="Profundidade do fairlead abaixo da superfície. 0 = linha partindo da superfície. Valor igual à lâmina = linha horizontal no fundo."
+              >
+                <Input
+                  type="number"
+                  step="1"
+                  min="0"
+                  {...register('boundary.startpoint_depth', {
+                    valueAsNumber: true,
+                  })}
                   className="h-8 font-mono"
                 />
               </InlineField>
@@ -441,16 +510,31 @@ export function CaseFormPage() {
                 />
               </InlineField>
               <InlineField
-                label={mode === 'Tension' ? 'T_fl' : 'X total'}
-                unit={mode === 'Tension' ? 'N' : 'm'}
-                className="col-span-2"
+                label={mode === 'Tension' ? 'T_fl (fairlead)' : 'X total'}
+                unit={mode === 'Tension' ? undefined : 'm'}
               >
-                <Input
-                  type="number"
-                  step="any"
-                  {...register('boundary.input_value', { valueAsNumber: true })}
-                  className="h-8 font-mono"
-                />
+                {mode === 'Tension' ? (
+                  <Controller
+                    control={control}
+                    name="boundary.input_value"
+                    render={({ field }) => (
+                      <UnitInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        quantity="force"
+                        digits={2}
+                        className="h-8"
+                      />
+                    )}
+                  />
+                ) : (
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register('boundary.input_value', { valueAsNumber: true })}
+                    className="h-8 font-mono"
+                  />
+                )}
               </InlineField>
               <InlineField
                 label="μ (atrito)"
@@ -538,13 +622,16 @@ export function CaseFormPage() {
             <PlotArea
               isFetching={previewQuery.isFetching}
               result={previewQuery.data}
-              formInvalid={!isValid}
+              previewReady={previewReady}
             />
           </CardContent>
         </Card>
 
         {/* ───── Bottom: métricas ───── */}
-        <MetricsRow result={previewQuery.data} formInvalid={!isValid} />
+        <MetricsRow
+          result={previewQuery.data}
+          previewReady={previewReady}
+        />
       </div>
     </>
   )
@@ -618,18 +705,18 @@ function InlineField({
 function PreviewStatusChip({
   isFetching,
   result,
-  formInvalid,
+  previewReady,
 }: {
   isFetching: boolean
   result?: SolverResult
-  formInvalid: boolean
+  previewReady: boolean
 }) {
   let variant: 'success' | 'warning' | 'danger' | 'secondary' = 'secondary'
   let icon: React.ReactNode = null
   let label = 'Aguardando'
 
-  if (formInvalid) {
-    label = 'Form inválido'
+  if (!previewReady) {
+    label = 'Preencha os parâmetros'
     icon = <Info className="mr-1 h-3 w-3" />
   } else if (isFetching) {
     variant = 'warning'
@@ -665,18 +752,19 @@ function PreviewStatusChip({
 function PlotArea({
   isFetching,
   result,
-  formInvalid,
+  previewReady,
 }: {
   isFetching: boolean
   result?: SolverResult
-  formInvalid: boolean
+  previewReady: boolean
 }) {
-  if (formInvalid && !result) {
+  if (!previewReady && !result) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
         <Info className="h-6 w-6 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          Preencha os campos acima para ver o perfil calculado.
+          Preencha os parâmetros do segmento e contorno para ver o perfil
+          calculado.
         </p>
       </div>
     )
@@ -715,12 +803,14 @@ function PlotArea({
 
 function MetricsRow({
   result,
-  formInvalid,
+  previewReady,
 }: {
   result?: SolverResult
-  formInvalid: boolean
+  previewReady: boolean
 }) {
-  if (formInvalid || !result) {
+  const system = useUnitsStore((s) => s.system)
+
+  if (!previewReady || !result) {
     return (
       <div className="grid shrink-0 grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -746,15 +836,25 @@ function MetricsRow({
     ? Math.sqrt(Math.max(result.anchor_tension ** 2 - result.H ** 2, 0))
     : 0
 
+  // Formatador "primário (te) + secundário (kN)" para o card principal de tração.
+  const tFlPair = fmtForcePairUnits(result.fairlead_tension, system)
+
+  // Auxiliares para abreviar dentro das linhas dos demais cards.
+  const F = (v: number): string => fmtForce(v, system)
+  const Fpair = (v: number): string => {
+    const p = fmtForcePairUnits(v, system)
+    return `${p.primary} · ${p.secondary}`
+  }
+
   return (
     <div className="grid shrink-0 grid-cols-4 gap-2">
       {/* Tração — primário com gauge */}
       <MetricCard
         label="Tração no fairlead"
-        primary={fmtForceKN(result.fairlead_tension, 1)}
-        secondary={`≈ ${fmtTonfNumber(result.fairlead_tension, 1)} tf`}
+        primary={tFlPair.primary}
+        secondary={`≈ ${tFlPair.secondary}`}
         rows={[
-          ['V vertical', fmtForceKN(vFairlead, 1)],
+          ['V vertical', F(vFairlead)],
           [
             'Ângulo (horiz.)',
             fmtAngleDeg(result.angle_wrt_horz_fairlead, 1),
@@ -784,13 +884,13 @@ function MetricsRow({
         ]}
       />
 
-      {/* Forças — completo (kN + tf juntos) */}
+      {/* Forças — primário + secundário juntos */}
       <MetricCard
         label="Forças"
         rows={[
-          ['H (horizontal)', fmtForcePair(result.H)],
-          ['T âncora', fmtForcePair(result.anchor_tension)],
-          ['V âncora', fmtForcePair(vAnchor)],
+          ['H (horizontal)', Fpair(result.H)],
+          ['T âncora', Fpair(result.anchor_tension)],
+          ['V âncora', Fpair(vAnchor)],
           [
             'Ângulo âncora',
             fmtAngleDeg(result.angle_wrt_horz_anchor, 1),
@@ -810,17 +910,12 @@ function MetricsRow({
         rows={[
           ['Utilização', fmtPercent(result.utilization, 2) + ' MBL'],
           ['Iterações', String(result.iterations_used)],
-          ['H (param.)', fmtForceKN(result.H, 1)],
+          ['H (param.)', F(result.H)],
         ]}
         footer={result.message || undefined}
       />
     </div>
   )
-}
-
-/** Formata "123,4 kN · 12,6 tf" numa linha */
-function fmtForcePair(valueN: number): string {
-  return `${fmtForceKN(valueN, 1)} · ${fmtTonfNumber(valueN, 1)} tf`
 }
 
 function MetricCard({

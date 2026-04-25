@@ -190,6 +190,19 @@ def solve_elastic_iterative(
     # + brentq + eventuais re-avaliações. Reflete o custo real do solver.
     iters = _call_count[0]
 
+    # Sanidade física: aço/poliéster operacional opera com strain < 1%; mesmo
+    # poliéster em deformação aparente raramente passa de 3-4%. Strains acima
+    # de 5% indicam que algum dos inputs (EA, T_fl, w) está em unidade errada
+    # ou irrealista. Sinalizamos como caso inviável com mensagem explicativa.
+    strain = (L_eff_final - L) / L
+    if strain > 0.05:
+        raise ValueError(
+            f"Strain final {strain * 100:.1f}% (>5%) é fisicamente implausível. "
+            "Provável input em unidade errada — verifique se EA está em "
+            "Newtons (não te/tonne-força) e w em N/m (não kgf/m). Para wire/"
+            "chain reais, strain operacional < 1%."
+        )
+
     return SolverResult(
         **{
             **rigid_result.model_dump(),
@@ -200,7 +213,7 @@ def solve_elastic_iterative(
             "iterations_used": iters,
             "message": (
                 f"Catenária elástica convergida (L_stretched={L_eff_final:.3f} m, "
-                f"elongação {(L_eff_final - L) / L * 100:.2f}%)."
+                f"elongação {strain * 100:.2f}%)."
             ),
         }
     )

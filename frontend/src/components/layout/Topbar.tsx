@@ -2,6 +2,7 @@ import { ChevronRight, Home } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { useUnitsStore } from '@/store/units'
 
 interface BreadcrumbItem {
   label: string
@@ -95,7 +96,53 @@ export function Topbar({ breadcrumbs, actions }: TopbarProps) {
         </ol>
       </nav>
 
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      <div className="flex items-center gap-2">
+        <UnitSystemToggle />
+        {actions}
+      </div>
     </header>
+  )
+}
+
+function UnitSystemToggle() {
+  const system = useUnitsStore((s) => s.system)
+  const setSystem = useUnitsStore((s) => s.setSystem)
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Sistema de unidades"
+      className="flex items-center rounded-md border border-border bg-muted/30 p-0.5 text-[11px] font-medium"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={system === 'metric'}
+        onClick={() => setSystem('metric')}
+        title="Metric: te, kgf/m, kN — convenção QMoor / offshore brasileira"
+        className={cn(
+          'rounded px-2 py-1 transition-colors',
+          system === 'metric'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        Metric
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={system === 'si'}
+        onClick={() => setSystem('si')}
+        title="SI: N, N/m — sistema internacional puro"
+        className={cn(
+          'rounded px-2 py-1 transition-colors',
+          system === 'si'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        SI
+      </button>
+    </div>
   )
 }

@@ -321,6 +321,15 @@ class SolverResult(BaseModel):
     utilization: float = 0.0  # fairlead_tension / MBL (0..1)
     alert_level: AlertLevel = AlertLevel.OK  # classificação por CriteriaProfile
 
+    # --- Contexto geométrico global (para plots surface-relative) ---
+    # Propagados pelo facade solve() a partir de BoundaryConditions. Permitem
+    # que o frontend renderize a geometria com Y=0 na superfície, fairlead
+    # a y=-startpoint_depth e seabed a y=-water_depth. Opcionais para
+    # compatibilidade com testes unitários que chamam diretamente o solver
+    # rígido/elástico (bypassando o facade).
+    water_depth: float = 0.0
+    startpoint_depth: float = 0.0
+
 
 __all__ = [
     "AlertLevel",

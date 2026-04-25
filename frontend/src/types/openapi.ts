@@ -1107,6 +1107,16 @@ export interface components {
             utilization: number;
             /** @default ok */
             alert_level: components["schemas"]["AlertLevel"];
+            /**
+             * Water Depth
+             * @default 0
+             */
+            water_depth: number;
+            /**
+             * Startpoint Depth
+             * @default 0
+             */
+            startpoint_depth: number;
         };
         /**
          * UtilizationLimits

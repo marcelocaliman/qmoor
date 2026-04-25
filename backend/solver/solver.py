@@ -20,6 +20,7 @@ import math
 from typing import Optional, Sequence
 
 from .elastic import solve_elastic_iterative
+from .laid_line import solve_laid_line
 from .types import (
     PROFILE_LIMITS,
     AlertLevel,
@@ -63,18 +64,20 @@ def _validate_inputs(
     # Validações específicas por modo (Seção 8 do MVP v2 PDF):
     if boundary.mode not in (SolutionMode.TENSION, SolutionMode.RANGE):
         raise ValueError(f"modo inválido: {boundary.mode}")
-    # Restrições de geometria do MVP v1: âncora no seabed, fairlead na superfície.
+    # Âncora livre do seabed ainda não é suportada (requer modelagem distinta).
     if not boundary.endpoint_grounded:
         raise NotImplementedError(
             "endpoint_grounded=False (âncora elevada do seabed) não é suportado "
-            "no MVP v1. Planejado para v2+. Forneça endpoint_grounded=True ou "
-            "aguarde a versão futura."
+            "ainda. Forneça endpoint_grounded=True."
         )
-    if boundary.startpoint_depth > 0:
-        raise NotImplementedError(
-            f"startpoint_depth={boundary.startpoint_depth:.2f} m > 0: fairlead "
-            "afundado abaixo da superfície não é suportado no MVP v1. Planejado "
-            "para v2+ (junto com batimetria variável)."
+    # Fairlead afundado (startpoint_depth > 0) é permitido: o drop vertical
+    # efetivo usado pelo solver é h − startpoint_depth. O despacho em solve()
+    # trata o caso degenerado drop = 0 (linha horizontal no seabed).
+    if boundary.startpoint_depth >= boundary.h + 1e-9:
+        raise ValueError(
+            f"startpoint_depth={boundary.startpoint_depth:.2f} m >= "
+            f"h={boundary.h:.2f} m: fairlead no ou abaixo do seabed é inviável "
+            "(a âncora precisa ficar abaixo do fairlead, ou no mesmo nível)."
         )
     return segment
 
@@ -132,29 +135,60 @@ def solve(
             message=f"Validação falhou: {exc}",
         )
 
+    # Drop vertical efetivo: distância entre a âncora (no seabed, y=-h)
+    # e o fairlead (submerso a profundidade startpoint_depth da superfície).
+    # Quando startpoint_depth = 0 (fairlead na superfície), drop = h.
+    h_drop = boundary.h - boundary.startpoint_depth
+
     try:
-        result = solve_elastic_iterative(
-            L=segment.length,
-            h=boundary.h,
-            w=segment.w,
-            EA=segment.EA,
-            mode=boundary.mode,
-            input_value=boundary.input_value,
-            config=config,
-            mu=seabed.mu,
-            MBL=segment.MBL,
-        )
+        if h_drop <= 1e-6:
+            # Caso degenerado: fairlead e âncora no mesmo nível (ambos no fundo).
+            # Sem catenária — linha horizontal no seabed, só atrito + elasticidade.
+            result = solve_laid_line(
+                L=segment.length,
+                w=segment.w,
+                EA=segment.EA,
+                mode=boundary.mode,
+                input_value=boundary.input_value,
+                mu=seabed.mu,
+                MBL=segment.MBL,
+                config=config,
+            )
+        else:
+            result = solve_elastic_iterative(
+                L=segment.length,
+                h=h_drop,
+                w=segment.w,
+                EA=segment.EA,
+                mode=boundary.mode,
+                input_value=boundary.input_value,
+                config=config,
+                mu=seabed.mu,
+                MBL=segment.MBL,
+            )
     except ValueError as exc:
         return SolverResult(
             status=ConvergenceStatus.INVALID_CASE,
             message=f"Caso inviável: {exc}",
+            water_depth=boundary.h,
+            startpoint_depth=boundary.startpoint_depth,
         )
     except Exception as exc:  # noqa: BLE001
         # Erros numéricos (overflow, div/0) caem aqui.
         return SolverResult(
             status=ConvergenceStatus.NUMERICAL_ERROR,
             message=f"Erro numérico: {exc}",
+            water_depth=boundary.h,
+            startpoint_depth=boundary.startpoint_depth,
         )
+
+    # Anexa os parâmetros geométricos globais para o plot reconstruir o
+    # sistema de coordenadas surface-relative (superfície em y=0, seabed
+    # em y=-water_depth, fairlead em y=-startpoint_depth).
+    result = result.model_copy(update={
+        "water_depth": boundary.h,
+        "startpoint_depth": boundary.startpoint_depth,
+    })
 
     # Pós-classificação (Camada 7 + alert_level da Seção 5 Documento A).
     if result.status == ConvergenceStatus.CONVERGED:

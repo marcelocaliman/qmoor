@@ -13,8 +13,11 @@ export function cn(...inputs: ClassValue[]): string {
  * 1 tonelada-força métrica = 9,80665 kN (convenção offshore).
  * Divide força em Newtons por essa constante para obter tf.
  */
-export const KGF_PER_N = 1 / 9.80665
-export const TONF_PER_N = KGF_PER_N / 1000
+export const G = 9.80665                   // m/s² — gravidade padrão
+export const KGF_PER_N = 1 / G             // 1 kgf = 9,80665 N → 1 N = 0,1019716 kgf
+export const TONF_PER_N = KGF_PER_N / 1000 // 1 tf  = 9806,65 N
+export const N_PER_KGF = G                 // multiplicador kgf → N
+export const N_PER_TONF = G * 1000         // multiplicador te  → N
 
 /** Formata número como tração em kN (valor em N). */
 export function fmtForceKN(valueN: number, digits = 2): string {
