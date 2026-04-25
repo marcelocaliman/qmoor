@@ -108,36 +108,39 @@ export function AttachmentsEditor({
         )}
       </div>
       <div className="space-y-2 p-2">
-        {visibleItems.length === 0 ? (
+        {visibleItems.length === 0 && !canAdd && (
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
             {emptyMsg}
           </p>
-        ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {visibleItems.map(({ field, realIdx }) => (
+        )}
+        <div className="flex flex-wrap gap-2">
+          {visibleItems.map(({ field, realIdx }) => (
+            <div
+              key={field.id}
+              className="min-w-[280px] max-w-[360px] flex-1"
+            >
               <AttachmentRow
-                key={field.id}
                 realIndex={realIdx}
                 control={control}
                 maxJunction={maxJunctions - 1}
                 showKindSelect={!kind}
                 onRemove={() => attachments.remove(realIdx)}
               />
-            ))}
-          </div>
-        )}
-        {canAdd && allFields.length < 20 && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-full gap-1.5 border-dashed text-[11px]"
-            onClick={addNew}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {addLabel}
-          </Button>
-        )}
+            </div>
+          ))}
+          {canAdd && allFields.length < 20 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-auto min-h-[44px] min-w-[280px] max-w-[360px] flex-1 gap-1.5 border-dashed text-[11px]"
+              onClick={addNew}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {addLabel}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )

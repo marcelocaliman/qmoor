@@ -417,7 +417,7 @@ export function CaseFormPage() {
                 {segmentsArray.fields.map((field, idx) => (
                   <div
                     key={field.id}
-                    className="min-w-[300px] max-w-[420px] flex-1"
+                    className="min-w-[280px] max-w-[360px] flex-1"
                   >
                     <SegmentEditor
                       index={idx}
@@ -449,7 +449,7 @@ export function CaseFormPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-auto min-h-[44px] min-w-[300px] flex-1 gap-1.5 border-dashed text-[11px]"
+                    className="h-auto min-h-[44px] min-w-[280px] max-w-[360px] flex-1 gap-1.5 border-dashed text-[11px]"
                     onClick={() => {
                       const last = segmentsArray.fields[
                         segmentsArray.fields.length - 1
@@ -497,7 +497,7 @@ export function CaseFormPage() {
                 value="ambiente"
                 className="col-start-1 row-start-1 m-0 px-3 pb-3 pt-2 data-[state=inactive]:invisible data-[state=inactive]:pointer-events-none"
               >
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,260px))] gap-3">
+              <div className="flex max-w-[320px] flex-col gap-3">
                 <InlineField
                   label="Lâmina d'água (sob âncora)"
                   unit="m"
@@ -589,7 +589,7 @@ export function CaseFormPage() {
                 value="analise"
                 className="col-start-1 row-start-1 m-0 px-3 pb-3 pt-2 data-[state=inactive]:invisible data-[state=inactive]:pointer-events-none"
               >
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,280px))] gap-3">
+              <div className="flex max-w-[320px] flex-col gap-3">
                 <InlineField label="Modo de cálculo">
                   <Controller
                     control={control}
@@ -645,10 +645,7 @@ export function CaseFormPage() {
                     />
                   )}
                 </InlineField>
-                <InlineField
-                  label="Critério de utilização"
-                  className="col-span-full max-w-[560px]"
-                >
+                <InlineField label="Critério de utilização">
                   <Controller
                     control={control}
                     name="criteria_profile"
@@ -676,7 +673,7 @@ export function CaseFormPage() {
                   />
                 </InlineField>
                 {criteriaProfile === 'UserDefined' && (
-                  <div className="col-span-full grid grid-cols-[repeat(auto-fill,minmax(140px,180px))] gap-2">
+                  <div className="flex flex-col gap-2">
                     {(
                       ['yellow_ratio', 'red_ratio', 'broken_ratio'] as const
                     ).map((k) => (
