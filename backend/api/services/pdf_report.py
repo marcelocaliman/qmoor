@@ -384,17 +384,32 @@ def _case_segments_table(case_input: CaseInput) -> Table:
 
 
 def _case_attachments_table(case_input: CaseInput) -> Optional[Table]:
-    """Tabela de boias e clumps. Retorna None quando lista vazia."""
+    """Tabela resumo de boias e clumps. Retorna None quando lista vazia.
+
+    F5.7: posição mostrada como distância DO FAIRLEAD (consistente com
+    a UI). Quando o attachment foi informado via position_index ou
+    position_s_from_anchor, convertemos `s_fl = total − s_anc`.
+    """
     if not case_input.attachments:
         return None
-    header = ["#", "Tipo", "Nome", "Posição", "Força (kN)", "Pendant (m)"]
+    total_len = sum(seg.length for seg in case_input.segments)
+    header = [
+        "#", "Tipo", "Nome", "Posição (m do fairlead)",
+        "Força líquida (kN)", "Pendant (m)",
+    ]
     rows = [header]
     for i, att in enumerate(case_input.attachments):
         kind_label = "Boia" if att.kind == "buoy" else "Clump weight"
         if att.position_s_from_anchor is not None:
-            pos_label = f"s = {att.position_s_from_anchor:.1f} m da âncora"
+            s_anc = att.position_s_from_anchor
+            s_fl = max(0, total_len - s_anc)
+            pos_label = f"s = {s_fl:.1f}"
         elif att.position_index is not None:
-            pos_label = f"junção {att.position_index}"
+            cum = 0.0
+            for j in range(att.position_index + 1):
+                cum += case_input.segments[j].length
+            s_fl = max(0, total_len - cum)
+            pos_label = f"junção {att.position_index} (s = {s_fl:.1f})"
         else:
             pos_label = "—"
         rows.append([
@@ -406,7 +421,61 @@ def _case_attachments_table(case_input: CaseInput) -> Optional[Table]:
             f"{att.tether_length:.1f}" if att.tether_length else "—",
         ])
     col_widths = [
-        0.7 * cm, 1.8 * cm, 3.0 * cm, 4.5 * cm, 2.5 * cm, 2.0 * cm,
+        0.7 * cm, 1.8 * cm, 2.8 * cm, 4.0 * cm, 3.0 * cm, 2.0 * cm,
+    ]
+    t = Table(rows, colWidths=col_widths)
+    t.setStyle(_data_table_style())
+    return t
+
+
+def _case_attachment_details_table(case_input: CaseInput) -> Optional[Table]:
+    """
+    Tabela detalhada de boias e pendants (F5.7). Apenas inclui linhas
+    onde algum campo de detalhe foi preenchido. Retorna None quando
+    nenhum attachment tem metadado adicional.
+    """
+    if not case_input.attachments:
+        return None
+
+    # Mapeia chave de end_type → label legível
+    end_label = {
+        "elliptical": "Elíptico",
+        "flat": "Plano",
+        "hemispherical": "Hemisférico",
+        "semi_conical": "Semi-cônico",
+    }
+    type_label = {"surface": "Superfície", "submersible": "Submergível"}
+
+    has_any_detail = False
+    rows: list[list[str]] = [[
+        "#", "Boia tipo", "Terminais", "Ø ext. (m)",
+        "L (m)", "Peso ar (kN)", "Pendant cabo", "Pendant Ø (mm)",
+    ]]
+    for i, att in enumerate(case_input.attachments):
+        details = (
+            att.buoy_type, att.buoy_end_type, att.buoy_outer_diameter,
+            att.buoy_length, att.buoy_weight_in_air,
+            att.pendant_line_type, att.pendant_diameter,
+        )
+        if not any(d for d in details):
+            # Sem detalhes pra esse attachment — pula.
+            continue
+        has_any_detail = True
+        rows.append([
+            f"{i + 1}",
+            type_label.get(att.buoy_type or "", "—"),
+            end_label.get(att.buoy_end_type or "", "—"),
+            f"{att.buoy_outer_diameter:.2f}" if att.buoy_outer_diameter else "—",
+            f"{att.buoy_length:.2f}" if att.buoy_length else "—",
+            f"{att.buoy_weight_in_air / 1000:.2f}" if att.buoy_weight_in_air else "—",
+            att.pendant_line_type or "—",
+            f"{att.pendant_diameter * 1000:.1f}" if att.pendant_diameter else "—",
+        ])
+    if not has_any_detail:
+        return None
+    col_widths = [
+        0.7 * cm, 2.0 * cm, 2.0 * cm, 1.8 * cm,
+        1.5 * cm, 2.0 * cm, 2.5 * cm, 2.0 * cm,
     ]
     t = Table(rows, colWidths=col_widths)
     t.setStyle(_data_table_style())
@@ -770,6 +839,16 @@ def build_pdf(
             styles["SectionTitle"],
         ))
         story.append(att_table)
+        story.append(Spacer(1, 0.2 * cm))
+        # Tabela de detalhes (geometria de boia + pendant material)
+        # quando o usuário preencheu algum campo opcional.
+        att_details = _case_attachment_details_table(case_input)
+        if att_details is not None:
+            story.append(Paragraph(
+                "Detalhes adicionais (geometria + pendant):",
+                styles["Caption"],
+            ))
+            story.append(att_details)
         story.append(Spacer(1, 0.4 * cm))
 
     if result is None:

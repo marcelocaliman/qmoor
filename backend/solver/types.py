@@ -265,6 +265,57 @@ class LineAttachment(BaseModel):
         ),
     )
 
+    # ─── Metadados detalhados da boia (espelham o que softwares
+    # profissionais como AHV/AHTS expõem). Não afetam o cálculo —
+    # documentam o hardware no relatório PDF e na UI. Campos
+    # ignorados quando kind='clump_weight'. ─────────────────────
+    buoy_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Tipo de boia: 'surface' (boia de superfície, marca de "
+            "amarração) ou 'submersible' (submergível, lazy-S/wave). "
+            "Apenas metadado — não afeta o cálculo."
+        ),
+    )
+    buoy_end_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Formato dos terminais da boia cilíndrica: 'elliptical', "
+            "'flat', 'hemispherical', 'semi_conical'. Influencia o "
+            "cálculo de empuxo total quando `submerged_force` não é "
+            "informado diretamente — atualmente metadado para PDF."
+        ),
+    )
+    buoy_outer_diameter: Optional[float] = Field(
+        default=None, gt=0,
+        description="Diâmetro externo da boia (m). Metadado.",
+    )
+    buoy_length: Optional[float] = Field(
+        default=None, gt=0,
+        description="Comprimento da boia cilíndrica (m). Metadado.",
+    )
+    buoy_weight_in_air: Optional[float] = Field(
+        default=None, ge=0,
+        description=(
+            "Peso da boia no ar (N). Metadado para auditoria; "
+            "`submerged_force` deve refletir o empuxo líquido com "
+            "este peso já descontado."
+        ),
+    )
+
+    # ─── Pennant line (cabo de conexão) — modelo do cabo ─────
+    pendant_line_type: Optional[str] = Field(
+        default=None, max_length=80,
+        description=(
+            "Identificador do cabo do pendant no catálogo de tipos "
+            "de linha (ex.: 'IWRCEIPS'). Metadado para PDF."
+        ),
+    )
+    pendant_diameter: Optional[float] = Field(
+        default=None, gt=0,
+        description="Diâmetro do cabo do pendant (m). Metadado.",
+    )
+
     @model_validator(mode="after")
     def _exactly_one_position(self) -> "LineAttachment":
         has_idx = self.position_index is not None

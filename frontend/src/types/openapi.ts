@@ -945,6 +945,41 @@ export interface components {
              * @description Comprimento do pendant/cabo de conexão entre o corpo (boia ou clump) e a linha principal, em metros. Quando informado, indica que o corpo está a essa distância vertical do ponto de attachment na linha. Para análise estática com pendant taut, `submerged_force` deve ser informado como o EFEITO LÍQUIDO no ponto de conexão (empuxo do corpo menos peso do pendant). O solver não usa `tether_length` no cálculo — ele alimenta apenas a visualização.
              */
             tether_length?: number | null;
+            /**
+             * Buoy Type
+             * @description Tipo de boia: 'surface' (boia de superfície, marca de amarração) ou 'submersible' (submergível, lazy-S/wave). Apenas metadado — não afeta o cálculo.
+             */
+            buoy_type?: string | null;
+            /**
+             * Buoy End Type
+             * @description Formato dos terminais da boia cilíndrica: 'elliptical', 'flat', 'hemispherical', 'semi_conical'. Influencia o cálculo de empuxo total quando `submerged_force` não é informado diretamente — atualmente metadado para PDF.
+             */
+            buoy_end_type?: string | null;
+            /**
+             * Buoy Outer Diameter
+             * @description Diâmetro externo da boia (m). Metadado.
+             */
+            buoy_outer_diameter?: number | null;
+            /**
+             * Buoy Length
+             * @description Comprimento da boia cilíndrica (m). Metadado.
+             */
+            buoy_length?: number | null;
+            /**
+             * Buoy Weight In Air
+             * @description Peso da boia no ar (N). Metadado para auditoria; `submerged_force` deve refletir o empuxo líquido com este peso já descontado.
+             */
+            buoy_weight_in_air?: number | null;
+            /**
+             * Pendant Line Type
+             * @description Identificador do cabo do pendant no catálogo de tipos de linha (ex.: 'IWRCEIPS'). Metadado para PDF.
+             */
+            pendant_line_type?: string | null;
+            /**
+             * Pendant Diameter
+             * @description Diâmetro do cabo do pendant (m). Metadado.
+             */
+            pendant_diameter?: number | null;
         };
         /**
          * LineSegment

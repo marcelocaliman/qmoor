@@ -25,6 +25,17 @@ export const lineAttachmentSchema = z
     position_s_from_anchor: z.number().positive().nullable().optional(),
     name: z.string().trim().max(80).nullable().optional(),
     tether_length: z.number().positive().nullable().optional(),
+    // Metadados detalhados (F5.7) — não afetam o cálculo. Tipos
+    // soltos (string em vez de enum literal) pra evitar atrito com
+    // o Select shadcn que devolve string genérica; backend Pydantic
+    // já valida os valores aceitos.
+    buoy_type: z.string().nullable().optional(),
+    buoy_end_type: z.string().nullable().optional(),
+    buoy_outer_diameter: z.number().positive().nullable().optional(),
+    buoy_length: z.number().positive().nullable().optional(),
+    buoy_weight_in_air: z.number().min(0).nullable().optional(),
+    pendant_line_type: z.string().trim().max(80).nullable().optional(),
+    pendant_diameter: z.number().positive().nullable().optional(),
   })
   .refine(
     (a) =>

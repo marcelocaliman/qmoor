@@ -1,5 +1,5 @@
-import { Anchor, Plus, Trash2, Waves } from 'lucide-react'
-import { useEffect } from 'react'
+import { Anchor, ChevronDown, ChevronUp, Plus, Trash2, Waves } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
   Controller,
   useWatch,
@@ -105,13 +105,19 @@ export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
         : 'Boias e clump weights'
 
   const addNew = () => {
-    // F5.4.6a: por padrão, novos attachments usam `position_s_from_anchor`
-    // — mais flexível e didático ("a 100 m da âncora") do que apontar
-    // para uma junção pré-existente.
+    // F5.4.6a + F5.7: novos attachments usam `position_s_from_anchor`.
+    // Default "100 m DO FAIRLEAD" (storage = totalLength − 100) — a
+    // posição convencional de boias é perto do fairlead em mooring
+    // offshore, e a UI agora referencia o fairlead.
+    const defaultDistFromFairlead = 100
+    const sAnchor =
+      totalLength != null && totalLength > defaultDistFromFairlead
+        ? totalLength - defaultDistFromFairlead
+        : 100
     attachments.append({
       kind: kind ?? 'buoy',
       submerged_force: 50_000,
-      position_s_from_anchor: 100,
+      position_s_from_anchor: sAnchor,
       position_index: null,
       name: null,
     } as never)
@@ -211,6 +217,14 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
   totalLength?: number
   onRemove: () => void
 }) {
+  // Painel de detalhes (tipo de boia, dimensões, pendant material) é
+  // collapsible — fica oculto por padrão pra não poluir a UI principal.
+  const [showDetails, setShowDetails] = useState(false)
+  const kindWatched = useWatch({
+    control,
+    name: `${basePath}.${realIndex}.kind` as Path<T>,
+  })
+  const isBuoy = kindWatched === 'buoy'
   const p = (suffix: string): Path<T> =>
     `${basePath}.${realIndex}.${suffix}` as Path<T>
   // Modo derivado dos campos atuais: se `position_s_from_anchor` está
@@ -349,7 +363,7 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center justify-between gap-1">
             <Label className="text-[10px] font-medium text-muted-foreground">
-              {mode === 'distance' ? 'Distância da âncora (m)' : 'Junção'}
+              {mode === 'distance' ? 'Distância do fairlead (m)' : 'Junção'}
             </Label>
             {hasJunctions && (
               <button
@@ -365,27 +379,45 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
             )}
           </div>
           {mode === 'distance' ? (
+            // F5.7 — Convenção mudou: usuário informa distância
+            // desde o FAIRLEAD (referência mais comum em softwares
+            // profissionais de mooring). Storage interno permanece
+            // como `position_s_from_anchor` para não exigir migração;
+            // convertemos `s_anc = total_length − s_fl` na escrita,
+            // e o inverso na leitura.
             <Controller
               control={control}
               name={p('position_s_from_anchor')}
-              render={({ field }) => (
-                <Input
-                  type="number"
-                  min={0.01}
-                  max={totalLength ? totalLength - 0.01 : undefined}
-                  step={1}
-                  value={(field.value as number | null) ?? 0}
-                  onChange={(e) =>
-                    field.onChange(parseFloat(e.target.value || '0'))
-                  }
-                  className="h-8 font-mono"
-                  title={
-                    totalLength
-                      ? `Range válido: 0 < s < ${totalLength.toFixed(1)} m`
-                      : 'Distância em metros desde a âncora ao longo da linha'
-                  }
-                />
-              )}
+              render={({ field }) => {
+                const sAnc = (field.value as number | null) ?? 0
+                const sFl =
+                  totalLength != null && totalLength > 0
+                    ? Math.max(0, totalLength - sAnc)
+                    : sAnc
+                return (
+                  <Input
+                    type="number"
+                    min={0.01}
+                    max={totalLength ? totalLength - 0.01 : undefined}
+                    step={1}
+                    value={sFl}
+                    onChange={(e) => {
+                      const newSfl = parseFloat(e.target.value || '0')
+                      const newSanc =
+                        totalLength != null && totalLength > 0
+                          ? Math.max(0.01, totalLength - newSfl)
+                          : newSfl
+                      field.onChange(newSanc)
+                    }}
+                    className="h-8 font-mono"
+                    title={
+                      totalLength
+                        ? `Range válido: 0 < s_fl < ${totalLength.toFixed(1)} m`
+                        : 'Distância em metros desde o fairlead ao longo da linha'
+                    }
+                  />
+                )
+              }}
             />
           ) : (
             <Controller
@@ -446,7 +478,229 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
             />
           )}
         />
+        <button
+          type="button"
+          onClick={() => setShowDetails((v) => !v)}
+          className="flex h-7 shrink-0 items-center gap-1 rounded px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Detalhes da boia/clump e do pendant (opcional)"
+        >
+          {showDetails ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Menos
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              Detalhes
+            </>
+          )}
+        </button>
       </div>
+
+      {/* F5.7 — Detalhes opcionais da boia + pennant material.
+          Espelham campos de softwares profissionais (AHV/AHTS).
+          Não afetam o cálculo — `submerged_force` continua sendo o
+          input efetivo. Servem como auditoria/PDF. */}
+      {showDetails && (
+        <div className="space-y-2 rounded-md border border-border/40 bg-muted/20 p-2">
+          {isBuoy && (
+            <div className="space-y-2">
+              <Label className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Boia — geometria
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Tipo
+                  </Label>
+                  <Controller
+                    control={control}
+                    name={`${basePath}.${realIndex}.buoy_type` as Path<T>}
+                    render={({ field }) => (
+                      <Select
+                        value={(field.value as string | null) ?? ''}
+                        onValueChange={(v) => field.onChange(v || null)}
+                      >
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="surface">Superfície</SelectItem>
+                          <SelectItem value="submersible">Submergível</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Formato dos terminais
+                  </Label>
+                  <Controller
+                    control={control}
+                    name={`${basePath}.${realIndex}.buoy_end_type` as Path<T>}
+                    render={({ field }) => (
+                      <Select
+                        value={(field.value as string | null) ?? ''}
+                        onValueChange={(v) => field.onChange(v || null)}
+                      >
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="elliptical">Elíptico</SelectItem>
+                          <SelectItem value="flat">Plano (flat)</SelectItem>
+                          <SelectItem value="hemispherical">
+                            Hemisférico
+                          </SelectItem>
+                          <SelectItem value="semi_conical">
+                            Semi-cônico
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Diâmetro externo (m)
+                  </Label>
+                  <Controller
+                    control={control}
+                    name={`${basePath}.${realIndex}.buoy_outer_diameter` as Path<T>}
+                    render={({ field }) => (
+                      <Input
+                        type="number"
+                        step={0.1}
+                        min={0}
+                        value={(field.value as number | null) ?? ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value || '')
+                          field.onChange(
+                            Number.isFinite(v) && v > 0 ? v : null,
+                          )
+                        }}
+                        placeholder="—"
+                        className="h-7 font-mono text-xs"
+                      />
+                    )}
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Comprimento (m)
+                  </Label>
+                  <Controller
+                    control={control}
+                    name={`${basePath}.${realIndex}.buoy_length` as Path<T>}
+                    render={({ field }) => (
+                      <Input
+                        type="number"
+                        step={0.1}
+                        min={0}
+                        value={(field.value as number | null) ?? ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value || '')
+                          field.onChange(
+                            Number.isFinite(v) && v > 0 ? v : null,
+                          )
+                        }}
+                        placeholder="—"
+                        className="h-7 font-mono text-xs"
+                      />
+                    )}
+                  />
+                </div>
+                <div className="col-span-2 flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Peso no ar (N)
+                  </Label>
+                  <Controller
+                    control={control}
+                    name={`${basePath}.${realIndex}.buoy_weight_in_air` as Path<T>}
+                    render={({ field }) => (
+                      <Input
+                        type="number"
+                        step={1}
+                        min={0}
+                        value={(field.value as number | null) ?? ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value || '')
+                          field.onChange(
+                            Number.isFinite(v) && v >= 0 ? v : null,
+                          )
+                        }}
+                        placeholder="—"
+                        className="h-7 font-mono text-xs"
+                        title={
+                          'Peso da boia no ar. Auditoria — submerged_force ' +
+                          'já é a força líquida (empuxo descontando este peso ' +
+                          'e o peso do pendant).'
+                        }
+                      />
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Pendant — cabo de conexão
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-0.5">
+                <Label className="text-[10px] font-medium text-muted-foreground">
+                  Modelo do cabo
+                </Label>
+                <Controller
+                  control={control}
+                  name={`${basePath}.${realIndex}.pendant_line_type` as Path<T>}
+                  render={({ field }) => (
+                    <Input
+                      type="text"
+                      value={(field.value as string | null) ?? ''}
+                      onChange={(e) =>
+                        field.onChange(e.target.value || null)
+                      }
+                      placeholder="ex.: IWRCEIPS"
+                      className="h-7 font-mono text-xs"
+                      maxLength={80}
+                    />
+                  )}
+                />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <Label className="text-[10px] font-medium text-muted-foreground">
+                  Diâmetro (m)
+                </Label>
+                <Controller
+                  control={control}
+                  name={`${basePath}.${realIndex}.pendant_diameter` as Path<T>}
+                  render={({ field }) => (
+                    <Input
+                      type="number"
+                      step={0.001}
+                      min={0}
+                      value={(field.value as number | null) ?? ''}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value || '')
+                        field.onChange(
+                          Number.isFinite(v) && v > 0 ? v : null,
+                        )
+                      }}
+                      placeholder="—"
+                      className="h-7 font-mono text-xs"
+                    />
+                  )}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
