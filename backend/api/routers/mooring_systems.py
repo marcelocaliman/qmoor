@@ -32,6 +32,7 @@ from backend.solver.types import (
     EnvironmentalLoad,
     MooringSystemResult,
     PlatformEquilibriumResult,
+    WatchcircleResult,
 )
 from pydantic import BaseModel, Field
 
@@ -42,6 +43,18 @@ class EquilibriumRequest(BaseModel):
     Fx: float = Field(default=0.0, description="Componente X (N)")
     Fy: float = Field(default=0.0, description="Componente Y (N)")
     Mz: float = Field(default=0.0, description="Momento Z (N·m, reservado)")
+
+
+class WatchcircleRequest(BaseModel):
+    """Body do POST /watchcircle (F5.6)."""
+
+    magnitude_n: float = Field(
+        ..., ge=0.0, description="Magnitude da carga ambiental (N)",
+    )
+    n_steps: int = Field(
+        default=36, ge=4, le=180,
+        description="Passos azimutais (default 36 = passo de 10°)",
+    )
 
 router = APIRouter(prefix="/mooring-systems", tags=["mooring-systems"])
 
@@ -295,6 +308,35 @@ def equilibrium(
 ) -> PlatformEquilibriumResult:
     env = EnvironmentalLoad(Fx=body.Fx, Fy=body.Fy, Mz=body.Mz)
     res = mooring_system_service.solve_equilibrium_persisted(db, msys_id, env)
+    if res is None:
+        raise _msys_not_found(msys_id)
+    return res
+
+
+@router.post(
+    "/{msys_id}/watchcircle",
+    response_model=WatchcircleResult,
+    summary="Watchcircle: envelope de offset sob carga rotacionada (F5.6)",
+    description=(
+        "Varre a direção da carga ambiental em 360° (passo "
+        "`360/n_steps`) com magnitude fixa, devolvendo a sequência "
+        "de equilíbrios. A coleção de offsets forma o envelope "
+        "geométrico que o centro da plataforma traça — útil para "
+        "identificar direções de fragilidade do sistema.\n\n"
+        "Otimização: o baseline é computado uma vez e reusado em "
+        "todos os passos (ganho ~Nx em performance). Tipicamente "
+        "n_steps=36 (passo de 10°) leva 2–8 s para 4 linhas."
+    ),
+    responses={404: {"model": ErrorResponse}},
+)
+def watchcircle(
+    msys_id: int,
+    body: WatchcircleRequest,
+    db: Session = Depends(get_db),
+) -> WatchcircleResult:
+    res = mooring_system_service.compute_watchcircle_persisted(
+        db, msys_id, body.magnitude_n, body.n_steps,
+    )
     if res is None:
         raise _msys_not_found(msys_id)
     return res

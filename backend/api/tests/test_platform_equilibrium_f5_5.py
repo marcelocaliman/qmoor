@@ -250,3 +250,83 @@ def test_post_equilibrium_preview(client) -> None:  # type: ignore[no-untyped-de
     # Componente +X e +Y no offset (mesmo sentido da carga)
     assert body["offset_xy"][0] > 0
     assert body["offset_xy"][1] > 0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# F5.6 — Watchcircle
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_watchcircle_solver_simetrico() -> None:
+    """Spread 4× simétrico + carga rotacionada → envelope ~circular,
+    cada offset com magnitude similar."""
+    from backend.solver.equilibrium import compute_watchcircle
+    msys = _spread_4x()
+    res = compute_watchcircle(msys, magnitude_n=30_000.0, n_steps=12)
+    assert len(res.points) == 12
+    assert res.n_failed == 0
+    assert res.max_offset_magnitude > 0
+
+    # Em spread simétrico, a magnitude do offset varia pouco entre
+    # azimuths (~10% no máximo, dependendo de não-linearidades).
+    mags = [p.equilibrium.offset_magnitude for p in res.points]
+    rel_var = (max(mags) - min(mags)) / max(mags)
+    assert rel_var < 0.15, (
+        f"Variação relativa do offset {rel_var:.2%} muito alta para "
+        "spread simétrico"
+    )
+
+
+def test_watchcircle_offset_segue_carga() -> None:
+    """A direção do offset deve casar com a direção da carga."""
+    from backend.solver.equilibrium import compute_watchcircle
+    msys = _spread_4x()
+    res = compute_watchcircle(msys, magnitude_n=20_000.0, n_steps=8)
+    for p in res.points:
+        eq = p.equilibrium
+        if eq.offset_magnitude < 0.05:
+            continue  # offset muito pequeno, direção não confiável
+        diff = abs(eq.offset_azimuth_deg - p.azimuth_deg)
+        diff = min(diff, 360.0 - diff)
+        assert diff < 10.0, (
+            f"Azimuth do offset {eq.offset_azimuth_deg:.1f}° != "
+            f"azimuth da carga {p.azimuth_deg:.1f}° (diff {diff:.1f}°)"
+        )
+
+
+def test_watchcircle_carga_zero() -> None:
+    """Magnitude zero → todos os offsets ≈ 0."""
+    from backend.solver.equilibrium import compute_watchcircle
+    msys = _spread_4x()
+    res = compute_watchcircle(msys, magnitude_n=0.0, n_steps=12)
+    assert len(res.points) == 12
+    assert res.max_offset_magnitude < 1e-3
+
+
+def test_watchcircle_n_steps_invalido_lanca() -> None:
+    from backend.solver.equilibrium import compute_watchcircle
+    msys = _spread_4x()
+    with pytest.raises(ValueError, match="n_steps"):
+        compute_watchcircle(msys, magnitude_n=10_000.0, n_steps=2)
+
+
+def test_post_watchcircle_endpoint(client) -> None:  # type: ignore[no-untyped-def]
+    msys_id = _create_via_api(client)
+    resp = client.post(
+        f"/api/v1/mooring-systems/{msys_id}/watchcircle",
+        json={"magnitude_n": 25_000.0, "n_steps": 12},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["n_steps"] == 12
+    assert len(body["points"]) == 12
+    assert body["n_failed"] == 0
+    assert body["max_offset_magnitude"] > 0
+
+
+def test_post_watchcircle_id_inexistente(client) -> None:  # type: ignore[no-untyped-def]
+    resp = client.post(
+        "/api/v1/mooring-systems/9999/watchcircle",
+        json={"magnitude_n": 1000.0, "n_steps": 8},
+    )
+    assert resp.status_code == 404

@@ -656,6 +656,56 @@ class PlatformEquilibriumResult(BaseModel):
     solver_version: str = Field(default="")
 
 
+class WatchcirclePoint(BaseModel):
+    """
+    F5.6 — Um ponto da varredura watchcircle.
+
+    Representa o estado de equilíbrio para uma carga de magnitude
+    fixa aplicada num azimuth específico. A coleção de pontos forma
+    o envelope (curva fechada) que o centro da plataforma traça
+    quando a direção da carga varia em 360°.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    azimuth_deg: float = Field(..., ge=0.0, lt=360.0)
+    magnitude_n: float = Field(..., ge=0.0)
+    equilibrium: PlatformEquilibriumResult
+
+
+class WatchcircleResult(BaseModel):
+    """
+    F5.6 — Resultado da varredura watchcircle.
+
+    Engenharia offshore: o "watchcircle" é o envelope geométrico
+    das posições que o centro da plataforma assume conforme a
+    direção da carga ambiental varia mantida magnitude constante.
+    Útil para identificar:
+
+      - Direção em que o sistema é mais "mole" (offset máximo)
+      - Direção em que linhas saturam primeiro
+      - Buracos de cobertura no spread
+
+    `points` é uma lista ordenada por `azimuth_deg`. Para fechar
+    visualmente a curva, o consumidor concatena o primeiro ponto
+    no fim.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    magnitude_n: float = Field(..., ge=0.0)
+    n_steps: int = Field(..., ge=4)
+    points: list[WatchcirclePoint]
+
+    # Métricas resumidas para o card de detalhe.
+    max_offset_magnitude: float = Field(default=0.0, ge=0.0)
+    max_offset_load_azimuth_deg: float = Field(default=0.0, ge=0.0, lt=360.0)
+    max_utilization: float = Field(default=0.0, ge=0.0)
+    worst_alert_level: AlertLevel = Field(default=AlertLevel.OK)
+    n_failed: int = Field(default=0, ge=0)
+    solver_version: str = Field(default="")
+
+
 __all__ = [
     "AlertLevel",
     "AttachmentKind",
@@ -675,5 +725,7 @@ __all__ = [
     "SolverConfig",
     "SolverResult",
     "UtilizationLimits",
+    "WatchcirclePoint",
+    "WatchcircleResult",
     "classify_utilization",
 ]

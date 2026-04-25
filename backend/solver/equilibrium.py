@@ -45,6 +45,8 @@ from .types import (
     MooringLineResult,
     PlatformEquilibriumResult,
     SolutionMode,
+    WatchcirclePoint,
+    WatchcircleResult,
 )
 
 if TYPE_CHECKING:
@@ -215,6 +217,7 @@ def solve_platform_equilibrium(
     *,
     max_iter: int = 80,
     tol_force_n: float = 10.0,
+    precomputed_anchors: list[tuple[float, float]] | None = None,
 ) -> PlatformEquilibriumResult:
     """
     Encontra o offset da plataforma sob carga ambiental F_env e devolve
@@ -234,9 +237,17 @@ def solve_platform_equilibrium(
 
     Carga zero curto-circuita: retorna offset (0, 0) imediatamente
     sem chamar fsolve (mais rápido e numericamente mais limpo).
+
+    `precomputed_anchors` permite reusar o baseline em chamadas em
+    lote (F5.6 watchcircle). Quando `None`, baseline é computado
+    aqui dentro.
     """
     # 1. Baseline para extrair posição das âncoras.
-    anchors = _solve_baseline_anchor_positions(msys_input)
+    anchors = (
+        precomputed_anchors
+        if precomputed_anchors is not None
+        else _solve_baseline_anchor_positions(msys_input)
+    )
 
     # Atalho para carga zero: equilíbrio é o estado neutro.
     if env.magnitude < 1e-9:
@@ -267,17 +278,35 @@ def solve_platform_equilibrium(
             **agg,
         )
 
-    # 2. fsolve outer loop.
-    # Chute inicial: pequeno deslocamento NA MESMA DIREÇÃO da F_env.
-    # Convenção: a plataforma desloca no sentido da força aplicada;
-    # cabos do lado oposto se estendem e geram a força restauradora
-    # em sentido contrário. Ex.: carga em +X faz plataforma ir +X,
-    # cabos do lado −X esticam e puxam em −X balanceando o sistema.
-    # Escala 1 m é arbitrária — fsolve ajusta rapidamente.
+    # 2. fsolve outer loop com estratégia de retry robusta.
+    #
+    # Em alguns ângulos (notadamente carga alinhada com eixos
+    # principais quando o spread está em diagonais — ex.: load em
+    # 90°/180°/270° em spread 45°/135°/225°/315°), fsolve encontra
+    # *fixed points* patológicos a centenas de metros do equilíbrio
+    # físico real. Mitigamos com 4 chutes diferentes, escolhendo
+    # aquele que dá o MENOR resíduo E offset fisicamente plausível
+    # (≤ 50 m, condizente com mooring offshore real).
+    #
+    # Robustez > performance aqui — varredura de watchcircle paga
+    # ~4× o tempo, mas resultados ficam sólidos em todas as direções.
     fenv_xy = (env.Fx, env.Fy)
-    init_scale = 1.0
     init_dir = (env.Fx / env.magnitude, env.Fy / env.magnitude)
-    delta0 = np.array([init_dir[0] * init_scale, init_dir[1] * init_scale])
+    perp_dir = (-init_dir[1], init_dir[0])  # perpendicular à direção da carga
+    candidate_chutes = [
+        (init_dir[0] * 0.5, init_dir[1] * 0.5),
+        (init_dir[0] * 2.0, init_dir[1] * 2.0),
+        # Chute perpendicular ajuda a escapar de fixed points alinhados
+        # com a direção da carga em casos simétricos.
+        (init_dir[0] * 1.0 + perp_dir[0] * 0.5,
+         init_dir[1] * 1.0 + perp_dir[1] * 0.5),
+        (init_dir[0] * 1.0 - perp_dir[0] * 0.5,
+         init_dir[1] * 1.0 - perp_dir[1] * 0.5),
+    ]
+    # Limiar de plausibilidade física: offsets > 50m em mooring
+    # estático tipicamente são solução numérica de degenerate (linhas
+    # esticadas além do que a física do problema permite).
+    max_plausible_offset_m = 50.0
 
     iter_count = [0]
 
@@ -285,17 +314,40 @@ def solve_platform_equilibrium(
         iter_count[0] += 1
         return _residual(d, msys_input, anchors, fenv_xy)
 
-    try:
-        delta_opt, info, ier, msg = fsolve(
-            residual_with_count,
-            delta0,
-            full_output=True,
-            xtol=1e-3,  # 1 mm de tolerância no offset
-            maxfev=max_iter,
-        )
-    except Exception as exc:  # noqa: BLE001
-        # fsolve raramente lança; mais comum é não convergir e
-        # retornar `ier != 1`.
+    best_delta: np.ndarray | None = None
+    best_residual = float("inf")
+    best_ier = 0
+    last_msg = ""
+    for cx, cy in candidate_chutes:
+        delta0 = np.array([cx, cy])
+        try:
+            delta_try, info, ier_try, msg_try = fsolve(
+                residual_with_count, delta0,
+                full_output=True, xtol=1e-3, maxfev=max_iter,
+            )
+            offset_try = float(math.hypot(delta_try[0], delta_try[1]))
+            # Soluções não-físicas (offset enorme) são descartadas
+            # mesmo se o resíduo numérico estiver baixo.
+            if offset_try > max_plausible_offset_m:
+                last_msg = (
+                    f"Chute ({cx:.2f},{cy:.2f}) levou a offset "
+                    f"{offset_try:.0f}m — descartado."
+                )
+                continue
+            res_vec = _residual(delta_try, msys_input, anchors, fenv_xy)
+            res_mag = float(math.hypot(res_vec[0], res_vec[1]))
+            if res_mag < best_residual:
+                best_residual = res_mag
+                best_delta = delta_try
+                best_ier = ier_try
+                last_msg = msg_try
+            if res_mag <= tol_force_n:
+                break
+        except Exception as exc:  # noqa: BLE001
+            last_msg = f"Erro numérico no fsolve: {exc}"
+            continue
+
+    if best_delta is None:
         return PlatformEquilibriumResult(
             environmental_load=env,
             offset_xy=(0.0, 0.0),
@@ -305,9 +357,12 @@ def solve_platform_equilibrium(
             residual_magnitude=float("inf"),
             iterations=iter_count[0],
             converged=False,
-            message=f"Erro numérico no fsolve: {exc}",
+            message=f"fsolve falhou em todos os chutes. {last_msg}",
             solver_version=SOLVER_VERSION,
         )
+    delta_opt = best_delta
+    ier = best_ier
+    msg = last_msg
 
     # 3. Computa estado final no offset encontrado.
     delta_final = (float(delta_opt[0]), float(delta_opt[1]))
@@ -322,8 +377,12 @@ def solve_platform_equilibrium(
         agg["restoring_force_xy"][1] + env.Fy,
     )
     residual_mag = math.hypot(*residual_xy)
+    # Critério prático: se o resíduo bate a tolerância em força, o
+    # ponto é fisicamente válido mesmo que fsolve relate "não
+    # convergiu" (ier != 1) — o que pode acontecer em casos onde o
+    # Jacobian numérico fica mal-condicionado mas a solução é boa.
+    converged = residual_mag <= tol_force_n
     fsolve_converged = ier == 1
-    converged = fsolve_converged and residual_mag <= tol_force_n
 
     offset_mag = math.hypot(*delta_final)
     if offset_mag > 1e-6:
@@ -359,4 +418,75 @@ def solve_platform_equilibrium(
     )
 
 
-__all__ = ["solve_platform_equilibrium"]
+def compute_watchcircle(
+    msys_input: "MooringSystemInput",
+    magnitude_n: float,
+    n_steps: int = 36,
+) -> WatchcircleResult:
+    """
+    F5.6 — Varre a direção da carga em 360° (passo `360/n_steps`)
+    com magnitude fixa, devolvendo o envelope de offsets.
+
+    Otimização: o baseline (resolver cada linha em Δ=0 para extrair
+    posição das âncoras) é computado UMA vez e reusado em todos os
+    `n_steps` equilíbrios. Sem isso, varredura de 36 passos custaria
+    36× o trabalho do baseline.
+
+    Carga zero curto-circuita: devolve `n_steps` pontos com offset
+    zero — útil pra UI consistente mesmo sem carga.
+    """
+    if n_steps < 4:
+        raise ValueError(f"n_steps deve ser ≥ 4, recebido {n_steps}")
+    if magnitude_n < 0:
+        raise ValueError(f"magnitude_n deve ser ≥ 0, recebido {magnitude_n}")
+
+    # Baseline pré-computado: reusa para todos os passos.
+    anchors = _solve_baseline_anchor_positions(msys_input)
+
+    points: list[WatchcirclePoint] = []
+    max_offset = 0.0
+    max_offset_az = 0.0
+    max_util = 0.0
+    worst = AlertLevel.OK
+    n_failed = 0
+
+    for i in range(n_steps):
+        az_deg = i * (360.0 / n_steps)
+        az_rad = math.radians(az_deg)
+        env = EnvironmentalLoad(
+            Fx=magnitude_n * math.cos(az_rad),
+            Fy=magnitude_n * math.sin(az_rad),
+        )
+        eq = solve_platform_equilibrium(
+            msys_input, env, precomputed_anchors=anchors,
+        )
+        points.append(WatchcirclePoint(
+            azimuth_deg=az_deg,
+            magnitude_n=magnitude_n,
+            equilibrium=eq,
+        ))
+
+        if not eq.converged:
+            n_failed += 1
+        if eq.offset_magnitude > max_offset:
+            max_offset = eq.offset_magnitude
+            max_offset_az = az_deg
+        if eq.max_utilization > max_util:
+            max_util = eq.max_utilization
+        if _ALERT_SEVERITY[eq.worst_alert_level] > _ALERT_SEVERITY[worst]:
+            worst = eq.worst_alert_level
+
+    return WatchcircleResult(
+        magnitude_n=magnitude_n,
+        n_steps=n_steps,
+        points=points,
+        max_offset_magnitude=max_offset,
+        max_offset_load_azimuth_deg=max_offset_az,
+        max_utilization=max_util,
+        worst_alert_level=worst,
+        n_failed=n_failed,
+        solver_version=SOLVER_VERSION,
+    )
+
+
+__all__ = ["compute_watchcircle", "solve_platform_equilibrium"]

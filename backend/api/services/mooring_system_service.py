@@ -24,12 +24,16 @@ from backend.api.schemas.mooring_systems import (
     MooringSystemOutput,
     MooringSystemSummary,
 )
-from backend.solver.equilibrium import solve_platform_equilibrium
+from backend.solver.equilibrium import (
+    compute_watchcircle,
+    solve_platform_equilibrium,
+)
 from backend.solver.multi_line import solve_mooring_system as solve_msys
 from backend.solver.types import (
     EnvironmentalLoad,
     MooringSystemResult,
     PlatformEquilibriumResult,
+    WatchcircleResult,
 )
 
 
@@ -290,6 +294,20 @@ def solve_equilibrium_persisted(
     return solve_platform_equilibrium(msys_input, env)
 
 
+def compute_watchcircle_persisted(
+    db: Session, msys_id: int, magnitude_n: float, n_steps: int = 36,
+) -> WatchcircleResult | None:
+    """
+    F5.6 — Varre direção da carga em 360° para um sistema salvo.
+    Não persiste (mesmo princípio do /equilibrium).
+    """
+    rec = db.get(MooringSystemRecord, msys_id)
+    if rec is None:
+        return None
+    msys_input = MooringSystemInput.model_validate_json(rec.config_json)
+    return compute_watchcircle(msys_input, magnitude_n, n_steps)
+
+
 __all__ = [
     "EXECUTION_RETENTION",
     "create_mooring_system",
@@ -300,6 +318,7 @@ __all__ = [
     "mooring_system_record_to_summary",
     "preview_solve",
     "solve_and_persist",
+    "compute_watchcircle_persisted",
     "solve_equilibrium_for_input",
     "solve_equilibrium_persisted",
     "update_mooring_system",
