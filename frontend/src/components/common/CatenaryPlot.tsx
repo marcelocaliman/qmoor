@@ -111,6 +111,63 @@ function clumpSvg(color: string): string {
   </svg>`
 }
 
+/**
+ * Mapeia sub-segmentos pós-split (gerados pelo resolver de attachments)
+ * de volta aos segmentos originais do usuário. Quando uma boia/clump é
+ * informada via `position_s_from_anchor` e cai no meio de um segmento,
+ * o solver divide aquele segmento em dois sub-segmentos do mesmo
+ * material — sem isso, attachments mid-segment não funcionariam. Mas
+ * para a visualização, o usuário deve ver UM "Seg N" por segmento que
+ * ele criou no form, não vários sub-segmentos com cores diferentes.
+ *
+ * Retorna `userIdxOf[k]` = índice do segmento original (0..N_user-1)
+ * que contém o sub-segmento pós-split `k` (0..N_post-1, anchor-first).
+ *
+ * A lógica espelha exatamente o resolver do backend:
+ * `backend/solver/attachment_resolver.py`.
+ */
+function buildPostSplitMapping(
+  userSegments: Array<{ length?: number }>,
+  attachments?: Array<{
+    position_index?: number | null
+    position_s_from_anchor?: number | null
+  }>,
+): number[] {
+  const lengths = userSegments.map((s) => s.length ?? 0)
+  const cum: number[] = [0]
+  for (const L of lengths) cum.push(cum[cum.length - 1]! + L)
+  const totalLen = cum[cum.length - 1]!
+
+  // Coleta posições s onde haverá splits (só para position_s_from_anchor
+  // que NÃO coincide com uma junção pré-existente).
+  const TOL = 1e-6
+  const splits = new Set<number>()
+  for (const att of attachments ?? []) {
+    let s: number | null = null
+    if (att.position_s_from_anchor != null) {
+      s = att.position_s_from_anchor
+    } else if (att.position_index != null) {
+      s = cum[att.position_index + 1] ?? null
+    }
+    if (s == null || s <= TOL || s >= totalLen - TOL) continue
+    const isAtJunction = cum.some((c) => Math.abs(c - s!) < TOL)
+    if (!isAtJunction) splits.add(s)
+  }
+  const splitArr = Array.from(splits).sort((a, b) => a - b)
+
+  // Para cada user-segment k, conta quantos splits caem dentro do seu
+  // intervalo (cum[k], cum[k+1]). Cada split adiciona +1 sub-segmento.
+  const out: number[] = []
+  for (let k = 0; k < userSegments.length; k += 1) {
+    const a = cum[k]!
+    const b = cum[k + 1]!
+    const internal = splitArr.filter((s) => s > a + TOL && s < b - TOL)
+    const subCount = 1 + internal.length
+    for (let j = 0; j < subCount; j += 1) out.push(k)
+  }
+  return out
+}
+
 // Estilo visual por categoria de cabo. Dash + largura comunicam o tipo
 // de material (corrente x cabo de aço x sintético) mesmo em B&W. A cor
 // fica por conta de uma paleta indexada pelo segmento (ver `segPalette`).
@@ -418,6 +475,22 @@ export function CatenaryPlot({
         ? ['#60A5FA', '#FBBF24', '#34D399', '#A78BFA', '#F472B6']
         : ['#1E3A5F', '#D97706', '#047857', '#7C3AED', '#BE185D']
 
+      // Quando o resolver divide segmentos por causa de attachments
+      // mid-segment, segBounds tem MAIS entradas do que `segments`
+      // (input do usuário). userIdxOf[k] mapeia sub-segmento k
+      // (anchor-first) ao segmento original que o usuário criou —
+      // garante 1 cor/label por segmento do form.
+      const userIdxOf = buildPostSplitMapping(
+        (segments ?? []).map((s) => ({
+          length: (s as { length?: number }).length,
+        })),
+        (attachments ?? []).map((a) => ({
+          position_index: a.position_index,
+          position_s_from_anchor: (a as { position_s_from_anchor?: number | null })
+            .position_s_from_anchor,
+        })),
+      )
+
       for (let s = 0; s < segBounds.length - 1; s += 1) {
         const startA = segBounds[s]!
         const endA = segBounds[s + 1]!
@@ -427,12 +500,18 @@ export function CatenaryPlot({
         const sx = curve.plotX.slice(startF, endF + 1)
         const sy = curve.plotY.slice(startF, endF + 1)
         const st = curve.tensions.slice(startF, endF + 1)
-        const segIdx = (segBounds.length - 2) - s  // segmento original 0..N-1
-        const meta = segments[segIdx]
+        // userIdxOf é anchor-first; s itera anchor-first; mapeamento direto.
+        // Fallback `s % segments.length` se o tamanho não bate (defesa
+        // contra divergência entre input e result em cases legados).
+        const userIdx =
+          userIdxOf.length > s
+            ? userIdxOf[s]!
+            : s % Math.max(1, (segments ?? []).length)
+        const meta = (segments ?? [])[userIdx]
         const catStyle =
           (meta?.category && CATEGORY_STYLE[meta.category]) ||
           { dash: 'solid', width: 3.5, label: 'Cabo' }
-        const labelParts = [`Seg ${segIdx + 1}`]
+        const labelParts = [`Seg ${userIdx + 1}`]
         if (meta?.line_type) labelParts.push(meta.line_type)
         if (meta?.category && CATEGORY_STYLE[meta.category]) {
           labelParts.push(CATEGORY_STYLE[meta.category]!.label)
@@ -444,12 +523,13 @@ export function CatenaryPlot({
           x: sx,
           y: sy,
           line: {
-            color: segPalette[segIdx % segPalette.length]!,
+            color: segPalette[userIdx % segPalette.length]!,
             width: catStyle.width,
             dash: catStyle.dash,
           },
           name: traceName,
           text: st.map((t) => `|T| = ${(t / 1000).toFixed(1)} kN`),
+          showlegend: false, // legenda HTML dedupa por user-segment
           hovertemplate:
             `${traceName}<br>x = %{x:.2f} m<br>y = %{y:.2f} m<br>%{text}<extra></extra>`,
         })
@@ -977,19 +1057,23 @@ export function CatenaryPlot({
       const segPaletteLight = ['#1E3A5F', '#D97706', '#047857', '#7C3AED', '#BE185D']
       const segPaletteDark = ['#60A5FA', '#FBBF24', '#34D399', '#A78BFA', '#F472B6']
       const segPalette = theme === 'dark' ? segPaletteDark : segPaletteLight
-      for (let s = 0; s < segBounds.length - 1; s += 1) {
-        const meta = segments[s]
+      // Legenda mostra UM chip por segmento criado pelo usuário (não
+      // por sub-segmento gerado pelo resolver de attachments). Itera
+      // sobre `segments` (input do form), não sobre `segBounds`.
+      const userSegCount = (segments ?? []).length || 1
+      for (let k = 0; k < userSegCount; k += 1) {
+        const meta = segments[k]
         const catStyle =
           (meta?.category && CATEGORY_STYLE[meta.category]) ||
           { dash: 'solid', width: 3.5, label: 'Cabo' }
-        const labelParts = [`Seg ${s + 1}`]
+        const labelParts = [`Seg ${k + 1}`]
         if (meta?.line_type) labelParts.push(meta.line_type)
         else if (meta?.category && CATEGORY_STYLE[meta.category]) {
           labelParts.push(CATEGORY_STYLE[meta.category]!.label)
         }
         items.push({
           kind: 'line',
-          color: segPalette[s % segPalette.length]!,
+          color: segPalette[k % segPalette.length]!,
           label: labelParts.join(' · '),
           dash: catStyle.dash,
           width: catStyle.width,
