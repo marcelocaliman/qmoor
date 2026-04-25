@@ -843,7 +843,7 @@ function ResultsTables({
   )
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
       {/* Forças */}
       <SectionTable title="Forças" subtitle="Tensões nos extremos e diferenças">
         <KeyValueTable
@@ -989,14 +989,18 @@ function SectionTable({
   children: React.ReactNode
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0 px-3 pb-1 pt-2">
+        <CardTitle className="text-[12px] font-semibold leading-tight">
+          {title}
+        </CardTitle>
         {subtitle && (
-          <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+          <p className="text-[10px] leading-tight text-muted-foreground">
+            {subtitle}
+          </p>
         )}
       </CardHeader>
-      <CardContent className="px-2 pb-3">{children}</CardContent>
+      <CardContent className="px-2 pb-2">{children}</CardContent>
     </Card>
   )
 }
@@ -1007,10 +1011,10 @@ function KeyValueTable({ rows }: { rows: Array<[string, string]> }) {
       <TableBody>
         {rows.map(([k, v]) => (
           <TableRow key={k} className="border-border/40">
-            <TableCell className="py-1.5 text-[12px] text-muted-foreground">
+            <TableCell className="py-0.5 text-[10.5px] leading-tight text-muted-foreground">
               {k}
             </TableCell>
-            <TableCell className="py-1.5 text-right font-mono text-[12px] font-medium tabular-nums">
+            <TableCell className="py-0.5 text-right font-mono text-[10.5px] font-medium leading-tight tabular-nums">
               {v}
             </TableCell>
           </TableRow>
