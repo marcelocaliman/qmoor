@@ -230,6 +230,10 @@ export function CatenaryPlot({
         anchorIconColor: '#94A3B8',
         buoyIconColor: '#3B82F6',
         clumpIconColor: '#FBBF24',
+        // Touchdown propositalmente vermelho para destacar dos
+        // demais marcadores e cores de segmento (multi-segmento usa
+        // paleta cíclica que pode incluir amarelo/laranja).
+        touchdown: '#EF4444',
       }
     }
     return {
@@ -250,6 +254,7 @@ export function CatenaryPlot({
       anchorIconColor: '#475569',
       buoyIconColor: '#0EA5E9',
       clumpIconColor: '#D97706',
+      touchdown: '#DC2626',
     }
   }, [theme])
 
@@ -630,7 +635,7 @@ export function CatenaryPlot({
         marker: {
           symbol: 'diamond',
           size: 11,
-          color: palette.grounded,
+          color: palette.touchdown,
           line: { color: '#FFFFFF', width: 1.5 },
         },
         name: 'Touchdown',
@@ -946,7 +951,7 @@ export function CatenaryPlot({
     if (hasTouchdown) {
       items.push({
         kind: 'diamond',
-        color: palette.grounded,
+        color: palette.touchdown,
         label: 'Touchdown',
       })
     }
