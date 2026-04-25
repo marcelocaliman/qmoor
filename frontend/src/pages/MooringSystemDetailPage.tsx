@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
-  AlertCircle,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
@@ -38,6 +37,7 @@ import type {
 } from '@/api/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MooringLineMetricsCard } from '@/components/common/MooringLineMetricsCard'
 import { MooringSystemPlanView } from '@/components/common/MooringSystemPlanView'
 import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/badge'
@@ -51,7 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { fmtAngleDeg, fmtMeters, fmtNumber, fmtPercent } from '@/lib/utils'
+import { fmtNumber, fmtPercent } from '@/lib/utils'
 
 export function MooringSystemDetailPage() {
   const { id } = useParams()
@@ -301,69 +301,38 @@ export function MooringSystemDetailPage() {
           </Card>
         </div>
 
-        {/* Lines table */}
-        <Card className="mt-4 overflow-hidden">
-          <div className="border-b border-border/60 bg-muted/20 px-4 py-2">
+        {/* Lines — grid de cards (substituindo a tabela compacta).
+            Cada card mostra geometria + tração + utilização + alerts
+            de uma linha individual; layout responsivo (1/2/3 colunas
+            conforme largura). Sincronizado com o equilíbrio corrente
+            quando o usuário interage com os controles abaixo. */}
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               Linhas ({data.input.lines.length})
+              {equilibrium && (
+                <span className="ml-2 normal-case text-[10px] text-primary">
+                  · valores do equilíbrio aplicado
+                </span>
+              )}
             </span>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead className="text-right">Azimuth</TableHead>
-                <TableHead className="text-right">Raio</TableHead>
-                <TableHead className="text-right">T_fl / X (input)</TableHead>
-                <TableHead className="text-right">H</TableHead>
-                <TableHead className="text-right">Utilização</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.input.lines.map((line, idx) => {
-                const lr = latestResult?.lines[idx]
-                const sr = lr?.solver_result
-                const inputLabel =
-                  line.boundary.mode === 'Tension'
-                    ? `${(line.boundary.input_value / 1000).toFixed(1)} kN`
-                    : fmtMeters(line.boundary.input_value, 1)
-                return (
-                  <TableRow key={line.name}>
-                    <TableCell className="font-medium">{line.name}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {fmtAngleDeg((line.fairlead_azimuth_deg * Math.PI) / 180, 1)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {fmtMeters(line.fairlead_radius, 1)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {inputLabel}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {sr ? `${(sr.H / 1000).toFixed(1)} kN` : '—'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {sr ? fmtPercent(sr.utilization, 1) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {sr ? (
-                        <StatusChip
-                          status={sr.status}
-                          alertLevel={sr.alert_level}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          —
-                        </span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {data.input.lines.map((line, idx) => {
+              // Prioridade: equilibrium (se carga aplicada) > latest result.
+              const sourceLines = equilibrium?.lines ?? latestResult?.lines
+              const lr = sourceLines?.[idx]
+              return (
+                <MooringLineMetricsCard
+                  key={line.name}
+                  lineSpec={line as unknown as import('@/api/types').SystemLineSpec}
+                  result={lr ?? undefined}
+                  paletteIndex={idx}
+                />
+              )
+            })}
+          </div>
+        </div>
 
         {/* F5.5 — Equilíbrio de plataforma sob carga ambiental */}
         <Card className="mt-4 overflow-hidden">
@@ -771,24 +740,6 @@ function Metric({
       </span>
     </div>
   )
-}
-
-function StatusChip({
-  status,
-  alertLevel,
-}: {
-  status: string
-  alertLevel: string | null | undefined
-}) {
-  if (status !== 'converged') {
-    return (
-      <Badge variant="danger" className="gap-1 text-[10px]">
-        <AlertCircle className="h-3 w-3" />
-        {status}
-      </Badge>
-    )
-  }
-  return <AlertChip level={alertLevel ?? 'ok'} />
 }
 
 function DeltaCell({

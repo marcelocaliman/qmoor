@@ -24,6 +24,7 @@ import {
 } from '@/api/endpoints'
 import type { MooringSystemInput, MooringSystemResult } from '@/api/types'
 import { AttachmentsEditor } from '@/components/common/AttachmentsEditor'
+import { MooringLineMetricsCard } from '@/components/common/MooringLineMetricsCard'
 import { MooringSystemPlanView } from '@/components/common/MooringSystemPlanView'
 import { SegmentEditor } from '@/components/common/SegmentEditor'
 import { UnitInput } from '@/components/common/UnitInput'
@@ -232,7 +233,7 @@ export function MooringSystemFormPage() {
   return (
     <>
       <Topbar breadcrumbs={breadcrumbs} actions={actions} />
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {/* Metadata */}
         <Card className="shrink-0">
           <CardContent className="grid grid-cols-1 gap-3 p-3 md:grid-cols-[2fr_1fr_2fr]">
@@ -389,6 +390,35 @@ export function MooringSystemFormPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Cards de análise por linha (preview live). Atualiza
+            conforme o usuário edita campos. Útil pra ver lado-a-lado
+            como cada linha responde aos parâmetros. */}
+        {values.lines.length > 0 && (
+          <div className="shrink-0 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Análise por linha (preview ao vivo)
+              </span>
+              {previewQuery.isFetching && (
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  recalculando…
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {values.lines.map((line, idx) => (
+                <MooringLineMetricsCard
+                  key={`${idx}-${line.name}`}
+                  lineSpec={line as unknown as import('@/api/types').SystemLineSpec}
+                  result={previewQuery.data?.lines[idx] ?? undefined}
+                  paletteIndex={idx}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
