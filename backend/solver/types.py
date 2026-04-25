@@ -344,6 +344,12 @@ class SolverResult(BaseModel):
     # SolverResult manualmente. O facade solve() preenche sempre.
     solver_version: str = ""
 
+    # --- Multi-segmento (F5.1) ---
+    # Índices dentro de coords_x/y onde cada segmento termina (boundary).
+    # Tem N+1 entradas para N segmentos: [0, n_seg_0, n_seg_0+n_seg_1, ...].
+    # Vazio para casos single-segmento (compatibilidade).
+    segment_boundaries: list[int] = Field(default_factory=list)
+
 
 __all__ = [
     "AlertLevel",

@@ -11,6 +11,10 @@
 #           drop efetivo h − startpoint_depth. Novo módulo laid_line para
 #           drop = 0. Trava de strain > 5% como INVALID_CASE. Adiciona
 #           water_depth e startpoint_depth em SolverResult.
-SOLVER_VERSION = "1.1.0"
+#   1.2.0 — F5.1: linha multi-segmento heterogênea (até 10 segmentos com
+#           w/EA/MBL próprios). Novo módulo multi_segment despachado por
+#           solve() quando len(segments) > 1. Caso primário fully suspended;
+#           touchdown em multi fica para sub-fase futura.
+SOLVER_VERSION = "1.2.0"
 
 __all__ = ["SOLVER_VERSION"]

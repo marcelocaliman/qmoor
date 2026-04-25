@@ -115,22 +115,30 @@ def test_default_endpoint_grounded_e_startpoint_depth() -> None:
 
 
 # ==============================================================================
-# A11 — Smoke test multi-segmento
+# Multi-segmento (F5.1)
 # ==============================================================================
 
 
-def test_multi_segmento_retorna_invalid_case() -> None:
+def test_multi_segmento_homogeneo_bate_com_single_segmento() -> None:
     """
-    v1 aceita UM segmento apenas (homogêneo). Fronteira documentada
-    em Seção 9 do Documento A v2.2. Contrato verificável.
+    Linha composta de 2 segmentos IDÊNTICOS, somando o mesmo comprimento
+    do caso single-segmento, deve produzir mesmo T_fl, X, geometria
+    (dentro de tolerância numérica do bracket de brentq).
     """
-    s1 = _seg_padrao()
-    s2 = _seg_padrao()
+    s_single = LineSegment(length=450.0, w=13.78 * LBF_FT_TO_N_M, EA=34.25e6, MBL=3.78e6)
+    s_a = LineSegment(length=200.0, w=13.78 * LBF_FT_TO_N_M, EA=34.25e6, MBL=3.78e6)
+    s_b = LineSegment(length=250.0, w=13.78 * LBF_FT_TO_N_M, EA=34.25e6, MBL=3.78e6)
     bc = BoundaryConditions(h=300, mode=SolutionMode.TENSION, input_value=785_000)
-    r = solve([s1, s2], bc)
-    assert r.status == ConvergenceStatus.INVALID_CASE
-    assert "segmento" in r.message.lower() or "multi" in r.message.lower()
-    assert "v2.1" in r.message
+
+    r_single = solve([s_single], bc)
+    r_multi = solve([s_a, s_b], bc)
+
+    assert r_single.status == ConvergenceStatus.CONVERGED
+    assert r_multi.status == ConvergenceStatus.CONVERGED
+    # Tolerância 0,3 % — vem do bracket de brentq na busca por H
+    assert abs(r_multi.fairlead_tension - r_single.fairlead_tension) / r_single.fairlead_tension < 3e-3
+    assert abs(r_multi.total_horz_distance - r_single.total_horz_distance) / r_single.total_horz_distance < 3e-3
+    assert abs(r_multi.H - r_single.H) / r_single.H < 3e-3
 
 
 def test_lista_vazia_de_segmentos_retorna_invalid_case() -> None:

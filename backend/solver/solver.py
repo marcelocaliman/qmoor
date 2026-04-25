@@ -22,6 +22,7 @@ from typing import Optional, Sequence
 from . import SOLVER_VERSION
 from .elastic import solve_elastic_iterative
 from .laid_line import solve_laid_line
+from .multi_segment import solve_multi_segment
 from .types import (
     PROFILE_LIMITS,
     AlertLevel,
@@ -47,15 +48,16 @@ def _validate_inputs(
     """Valida entradas e retorna o segmento único (MVP v1)."""
     if not line_segments:
         raise ValueError("line_segments vazia: forneça pelo menos um segmento")
-    if len(line_segments) > 1:
-        # Decisão fechada: v2.1 terá multi-segmento. Seção 9 do Documento A.
-        raise NotImplementedError(
-            f"MVP v1 suporta apenas um segmento; {len(line_segments)} recebidos. "
-            "Multi-segmento é escopo v2.1."
-        )
+    # Validação por segmento (Pydantic já garante >0, redundância barata).
+    for i, s in enumerate(line_segments):
+        if s.length <= 0 or s.EA <= 0 or s.MBL <= 0 or s.w <= 0:
+            raise ValueError(
+                f"segmento {i} com grandeza não-positiva (validado também por Pydantic)"
+            )
+    # Despacho single vs multi acontece em solve(): aqui retornamos o
+    # primeiro segmento como conveniência para o caso single (mantém o
+    # contrato anterior de _validate_inputs).
     segment = line_segments[0]
-    if segment.length <= 0 or segment.EA <= 0 or segment.MBL <= 0 or segment.w <= 0:
-        raise ValueError("segmento com grandeza não-positiva (validado também por Pydantic)")
     if boundary.h <= 0:
         raise ValueError("lâmina d'água h deve ser > 0")
     if boundary.input_value <= 0:
@@ -145,7 +147,20 @@ def solve(
     h_drop = boundary.h - boundary.startpoint_depth
 
     try:
-        if h_drop <= 1e-6:
+        n_segments = len(line_segments)
+        if n_segments > 1:
+            # Linha composta heterogênea (F5.1). Caminho de código separado
+            # para preservar o solver single-segmento original em todas as
+            # suas otimizações e testes.
+            result = solve_multi_segment(
+                segments=list(line_segments),
+                h=h_drop,
+                mode=boundary.mode,
+                input_value=boundary.input_value,
+                mu=seabed.mu,
+                config=config,
+            )
+        elif h_drop <= 1e-6:
             # Caso degenerado: fairlead e âncora no mesmo nível (ambos no fundo).
             # Sem catenária — linha horizontal no seabed, só atrito + elasticidade.
             result = solve_laid_line(

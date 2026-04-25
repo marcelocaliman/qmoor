@@ -79,13 +79,14 @@ def test_solver_valida_lista_vazia_de_segmentos() -> None:
     assert "segmento" in r.message.lower()
 
 
-def test_solver_valida_multisegmento_v2_1() -> None:
-    """MVP v1 não suporta multi-segmento."""
+def test_solver_aceita_multisegmento_e_converge() -> None:
+    """F5.1: multi-segmento agora é suportado e deve convergir."""
     s1 = _segmento_padrao()
     s2 = _segmento_padrao()
     bc = BoundaryConditions(h=300, mode=SolutionMode.TENSION, input_value=500_000)
     r = solve([s1, s2], bc)
-    assert r.status == ConvergenceStatus.INVALID_CASE
+    assert r.status == ConvergenceStatus.CONVERGED
+    assert r.fairlead_tension == pytest.approx(500_000, rel=1e-3)
 
 
 def test_solver_retorna_invalid_case_para_T_insuficiente() -> None:
