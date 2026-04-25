@@ -17,8 +17,8 @@ Faseamento adotado:
 | F5.4.1   | Modelo + persistência (Pydantic, SQLAlchemy, CRUD service, testes)  | ✅ |
 | F5.4.2   | Solver dispatcher + agregação de forças + endpoints API + retenção  | ✅ |
 | F5.4.3   | BCs de validação adicionais (simetria/equilíbrio, asymm extremos)   | ⬜ |
-| F5.4.4   | Frontend: lista + edição                                            | ⬜ |
-| F5.4.5   | Frontend: plan view polar                                           | ⬜ |
+| F5.4.4   | Frontend: lista + edição + detalhe + plan view polar                | ✅ |
+| F5.4.5   | Refinamentos UX: multi-segmento por linha, attachments, animações   | ⬜ |
 
 ---
 
@@ -225,16 +225,92 @@ Suite total backend após F5.4.2: **221 testes verde** (206 da F5.4.1 + **15 des
 
 ---
 
-## Próximo passo: F5.4.4 — Frontend
+---
 
-(F5.4.3 — BCs analíticos extras — ficou implícito na cobertura BC-MS-LINE-01..03
-do F5.4.2; pode ganhar BCs adicionais em iterações futuras se preciso.)
+## F5.4.4 — entrega (frontend)
 
-1. Página `/mooring-systems` com listagem (cards mostrando nome,
-   line_count, último resultante).
-2. Página de edição reaproveitando `SegmentEditor` e `BoundaryConditions`
-   por linha (tabs ou accordion por linha).
-3. Plan view polar (Plotly ou SVG nativo): círculo da plataforma +
-   linhas radiais até as âncoras, color-coded por
-   `worst_alert_level`/utilização individual.
-4. Tela de detalhe com tabela de execuções e métricas agregadas.
+### Componente de plan view
+
+[`frontend/src/components/common/MooringSystemPlanView.tsx`](../frontend/src/components/common/MooringSystemPlanView.tsx)
+— SVG nativo (sem Plotly):
+
+- Plataforma como círculo central, marca da proa em +X.
+- Eixos cardinais, anéis radiais de referência, grid pontilhado.
+- Cada linha como segmento radial fairlead → âncora colorido pelo
+  `alert_level` (verde/amarelo/vermelho/cinza-pontilhado para inválido).
+- Vetor da força resultante agregada (rosa) saindo do centro com
+  comprimento normalizado.
+- Modo `previewLines` para edição: desenha a plataforma + fairleads
+  mesmo sem resultado de solver, com placeholders de âncora a 4× raio.
+
+### Páginas
+
+| Página                                | Arquivo |
+|----------------------------------------|---------|
+| Listagem `/mooring-systems`            | [`MooringSystemsListPage.tsx`](../frontend/src/pages/MooringSystemsListPage.tsx) |
+| Detalhe `/mooring-systems/:id`         | [`MooringSystemDetailPage.tsx`](../frontend/src/pages/MooringSystemDetailPage.tsx) |
+| Criar `/mooring-systems/new`           | [`MooringSystemFormPage.tsx`](../frontend/src/pages/MooringSystemFormPage.tsx) |
+| Editar `/mooring-systems/:id/edit`     | mesmo componente, distinguindo via `useParams` |
+
+**Lista**: tabela com nome / line_count / raio plataforma / atualizado +
+busca por nome + paginação. Mesmo padrão de `CasesListPage`.
+
+**Detalhe**: plan view do último resultado + card de métricas
+agregadas (resultante kN/azimuth, n_converged/total, max_utilization,
+worst_alert_level) + tabela de linhas com H/utilização/status + tabela
+de histórico de até 10 execuções. Botão "Resolver" que chama
+`POST /{id}/solve` e atualiza a query.
+
+**Form**: layout split — esquerda com tabs por linha (cada tab tem
+campos de identidade + posição polar + segmento + boundary/seabed);
+direita com plan view live + métricas agregadas via `previewSolve`
+(debounce 600 ms). "Salvar" e "Salvar e calcular".
+
+### API client
+
+[`frontend/src/api/endpoints.ts`](../frontend/src/api/endpoints.ts) ganhou
+seção dedicada com `listMooringSystems`, `getMooringSystem`,
+`createMooringSystem`, `updateMooringSystem`, `deleteMooringSystem`,
+`solveMooringSystem`, `previewSolveMooringSystem`. Tipos em
+[`api/types.ts`](../frontend/src/api/types.ts) reexportam os schemas do
+OpenAPI regerado.
+
+### Navegação
+
+Sidebar ganhou item "Mooring systems" (ícone `Compass` da lucide-react)
+entre Casos e Catálogo. Router registra as 4 rotas com lazy-load por
+chunk separado.
+
+### Decisões de UI
+
+1. **SVG inline em vez de Plotly polar.** Plan view é simples
+   geometricamente e não precisa de pan/zoom interativo nesta versão.
+   SVG dá controle total sobre estilo (cores por alert level, dash para
+   inválidas, vetor resultante customizado) sem o peso do plotly-vendor
+   no bundle dessa rota.
+
+2. **Form com 1 segmento por linha.** Iteração inicial — o schema
+   suporta multi-segmento, mas a UI só expõe 1 segmento por linha pra
+   manter o form gerenciável. F5.4.5 vai trazer multi-segmento +
+   attachments + LineTypePicker, reaproveitando `SegmentEditor` da
+   `CaseFormPage`.
+
+3. **Preview live com debounce.** Mesmo padrão do `CaseFormPage`:
+   `useDebounce(values, 600)` + `useQuery` em
+   `previewSolveMooringSystem`. UI mostra spinner durante o cálculo e
+   aponta linhas inválidas com aviso vermelho.
+
+### Validação
+
+- `npx tsc -b --force` ✅ (sem erros)
+- `npm run build` ✅ (1.67s)
+
+---
+
+## Próximo passo: F5.4.5 — Refinamentos UX
+
+1. Multi-segmento por linha no form (reusar `SegmentEditor`).
+2. `LineTypePicker` integrado por linha.
+3. Attachments por linha.
+4. Animação suave do plan view ao trocar parâmetros.
+5. Painel de comparação multi-execução (overlay de plan views).

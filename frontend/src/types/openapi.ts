@@ -340,6 +340,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mooring-systems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listar mooring systems
+         * @description Lista sistemas multi-linha salvos, paginados e ordenados por updated_at desc. Use `search` para filtrar por nome.
+         */
+        get: operations["list_mooring_systems_api_v1_mooring_systems_get"];
+        put?: never;
+        /** Criar mooring system */
+        post: operations["create_mooring_system_api_v1_mooring_systems_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mooring-systems/preview-solve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview live (sem persistir)
+         * @description Resolve um mooring system para preview da UI sem persistir no banco. Linhas que falham aparecem no resultado com status diferente de `converged`; agregado ignora as não-convergidas.
+         */
+        post: operations["preview_solve_api_v1_mooring_systems_preview_solve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mooring-systems/{msys_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalhar mooring system
+         * @description Retorna a configuração completa do sistema e até as últimas 10 execuções do solver multi-linha (mais recentes primeiro).
+         */
+        get: operations["get_mooring_system_api_v1_mooring_systems__msys_id__get"];
+        /** Atualizar mooring system */
+        put: operations["update_mooring_system_api_v1_mooring_systems__msys_id__put"];
+        post?: never;
+        /**
+         * Remover mooring system
+         * @description Remove o sistema e todas as execuções (cascade ON DELETE).
+         */
+        delete: operations["delete_mooring_system_api_v1_mooring_systems__msys_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mooring-systems/{msys_id}/solve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolver mooring system
+         * @description Resolve cada linha do sistema (sem equilíbrio de plataforma) e agrega as forças horizontais no plano da plataforma. Persiste a execução; retenção das 10 mais recentes por sistema. Linhas que não convergem ficam de fora do agregado mas o resultado parcial é persistido (UI mostra `n_invalid`).
+         */
+        post: operations["solve_mooring_system_api_v1_mooring_systems__msys_id__solve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -984,6 +1070,237 @@ export interface components {
             /** Comments */
             comments?: string | null;
         };
+        /**
+         * MooringLineResult
+         * @description Resultado de uma linha individual dentro de um mooring system (F5.4).
+         *
+         *     Encapsula o `SolverResult` completo da linha mais informações de
+         *     posicionamento no plano da plataforma: posição do fairlead, posição
+         *     da âncora e força horizontal sentida pela plataforma a partir desta
+         *     linha. Toda geometria em metros, força em Newtons.
+         *
+         *     Convenção: o fairlead está em
+         *       `(R · cos(θ), R · sin(θ))`
+         *     onde θ = azimuth em rad e R = `fairlead_radius`. A linha sai
+         *     radialmente, então a âncora fica em
+         *       `((R + X) · cos(θ), (R + X) · sin(θ))`
+         *     com X = `solver_result.total_horz_distance`.
+         *
+         *     A força horizontal sobre a plataforma vinda desta linha é a
+         *     componente horizontal da tração no fairlead, apontando do fairlead
+         *     em direção à âncora (ou seja, +θ — radialmente para fora):
+         *       `horz_force_xy = H · (cos(θ), sin(θ))`
+         */
+        MooringLineResult: {
+            /** Line Name */
+            line_name: string;
+            /** Fairlead Azimuth Deg */
+            fairlead_azimuth_deg: number;
+            /** Fairlead Radius */
+            fairlead_radius: number;
+            /**
+             * Fairlead Xy
+             * @description Posição do fairlead no plano da plataforma (m).
+             */
+            fairlead_xy: [
+                number,
+                number
+            ];
+            /**
+             * Anchor Xy
+             * @description Posição da âncora no plano da plataforma (m).
+             */
+            anchor_xy: [
+                number,
+                number
+            ];
+            /**
+             * Horz Force Xy
+             * @description Componentes Fx, Fy (N) da força horizontal exercida pela linha sobre a plataforma no plano XY do casco.
+             */
+            horz_force_xy: [
+                number,
+                number
+            ];
+            solver_result: components["schemas"]["SolverResult"];
+        };
+        /**
+         * MooringSystemExecutionOutput
+         * @description Representação de uma execução persistida do mooring system.
+         */
+        MooringSystemExecutionOutput: {
+            /** Id */
+            id: number;
+            /** Mooring System Id */
+            mooring_system_id: number;
+            result: components["schemas"]["MooringSystemResult"];
+            /**
+             * Executed At
+             * Format: date-time
+             */
+            executed_at: string;
+        };
+        /**
+         * MooringSystemInput
+         * @description Configuração completa de um mooring system multi-linha.
+         *
+         *     Persistida como `config_json` em `mooring_systems`. Não inclui
+         *     resultados — a execução é responsabilidade da F5.4.2.
+         * @example {
+         *       "description": "Configuração simétrica 4 linhas, FPSO 60 m raio",
+         *       "lines": [
+         *         {
+         *           "boundary": {
+         *             "endpoint_grounded": true,
+         *             "h": 300,
+         *             "input_value": 1200000,
+         *             "mode": "Tension",
+         *             "startpoint_depth": 0
+         *           },
+         *           "fairlead_azimuth_deg": 45,
+         *           "fairlead_radius": 30,
+         *           "name": "L1",
+         *           "segments": [
+         *             {
+         *               "EA": 583000000,
+         *               "MBL": 5570000,
+         *               "category": "StuddedChain",
+         *               "length": 800,
+         *               "line_type": "ORQ20",
+         *               "w": 1100
+         *             }
+         *           ]
+         *         }
+         *       ],
+         *       "name": "Spread 4x — turret bow",
+         *       "platform_radius": 30
+         *     }
+         */
+        MooringSystemInput: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Platform Radius
+             * @description Raio nominal da plataforma (m), usado para visualização (plan view) e não afeta o cálculo das linhas.
+             */
+            platform_radius: number;
+            /**
+             * Lines
+             * @description Lista de linhas que compõem o sistema.
+             */
+            lines: components["schemas"]["SystemLineSpec"][];
+        };
+        /**
+         * MooringSystemOutput
+         * @description Representação detalhada (para GET /mooring-systems/{id}).
+         */
+        MooringSystemOutput: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            input: components["schemas"]["MooringSystemInput"];
+            /**
+             * Latest Executions
+             * @description Últimas 10 execuções (mais recente primeiro). Vazio se nunca foi resolvido.
+             */
+            latest_executions?: components["schemas"]["MooringSystemExecutionOutput"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * MooringSystemResult
+         * @description Resultado agregado de um mooring system multi-linha (F5.4).
+         *
+         *     Cada linha é resolvida independentemente (sem equilíbrio de
+         *     plataforma). A agregação aqui é informativa: reporta o resultante
+         *     horizontal das forças sobre o casco e, em equilíbrio sem cargas
+         *     externas, deve ser próximo de zero para um spread balanceado.
+         *
+         *     `worst_alert_level` segue a hierarquia broken > red > yellow > ok;
+         *     útil pra colorir a plan view. `n_invalid` conta linhas que não
+         *     convergiram e portanto NÃO entram no agregado de forças.
+         */
+        MooringSystemResult: {
+            /** Lines */
+            lines: components["schemas"]["MooringLineResult"][];
+            /**
+             * Aggregate Force Xy
+             * @description Soma vetorial das forças horizontais sobre a plataforma (N), ignorando linhas que não convergiram.
+             */
+            aggregate_force_xy: [
+                number,
+                number
+            ];
+            /** Aggregate Force Magnitude */
+            aggregate_force_magnitude: number;
+            /**
+             * Aggregate Force Azimuth Deg
+             * @description Direção do resultante. Sem significado quando `aggregate_force_magnitude` é numericamente zero.
+             * @default 0
+             */
+            aggregate_force_azimuth_deg: number;
+            /**
+             * Max Utilization
+             * @default 0
+             */
+            max_utilization: number;
+            /** @default ok */
+            worst_alert_level: components["schemas"]["AlertLevel"];
+            /**
+             * N Converged
+             * @default 0
+             */
+            n_converged: number;
+            /**
+             * N Invalid
+             * @default 0
+             */
+            n_invalid: number;
+            /**
+             * Solver Version
+             * @default
+             */
+            solver_version: string;
+        };
+        /**
+         * MooringSystemSummary
+         * @description Versão enxuta para listagem (sem `config_json` completo).
+         */
+        MooringSystemSummary: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Platform Radius */
+            platform_radius: number;
+            /** Line Count */
+            line_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** PaginatedResponse[CaseSummary] */
         PaginatedResponse_CaseSummary_: {
             /** Items */
@@ -999,6 +1316,17 @@ export interface components {
         PaginatedResponse_LineTypeOutput_: {
             /** Items */
             items: components["schemas"]["LineTypeOutput"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
+        /** PaginatedResponse[MooringSystemSummary] */
+        PaginatedResponse_MooringSystemSummary_: {
+            /** Items */
+            items: components["schemas"]["MooringSystemSummary"][];
             /** Total */
             total: number;
             /** Page */
@@ -1193,6 +1521,49 @@ export interface components {
              * @default 0
              */
             depth_at_fairlead: number;
+        };
+        /**
+         * SystemLineSpec
+         * @description Definição de uma linha dentro de um mooring system.
+         *
+         *     Equivale a um `CaseInput` (sem o nome do caso e sem a descrição),
+         *     acrescido das coordenadas polares do fairlead no frame da plataforma.
+         *
+         *     Convenção do plano horizontal:
+         *       - Origem no centro da plataforma.
+         *       - +X aponta para a proa (azimuth = 0°).
+         *       - Sentido anti-horário (ângulo cresce de proa → bombordo → popa).
+         *       - `fairlead_radius` em metros, distância radial do centro até o ponto
+         *         de fixação da linha no casco.
+         *       - Linha sai radialmente (azimuth + 180°) — a âncora fica no
+         *         prolongamento radial, a uma distância `total_horz_distance` da
+         *         plataforma (resolvida pelo solver).
+         */
+        SystemLineSpec: {
+            /**
+             * Name
+             * @description Identificador da linha (ex.: 'L1', 'proa BB').
+             */
+            name: string;
+            /**
+             * Fairlead Azimuth Deg
+             * @description Azimuth do fairlead no plano da plataforma, em graus.
+             */
+            fairlead_azimuth_deg: number;
+            /**
+             * Fairlead Radius
+             * @description Raio do fairlead a partir do centro da plataforma (m).
+             */
+            fairlead_radius: number;
+            /** Segments */
+            segments: components["schemas"]["LineSegment"][];
+            boundary: components["schemas"]["BoundaryConditions"];
+            seabed?: components["schemas"]["SeabedConfig"];
+            /** @default MVP_Preliminary */
+            criteria_profile: components["schemas"]["CriteriaProfile"];
+            user_defined_limits?: components["schemas"]["UtilizationLimits"] | null;
+            /** Attachments */
+            attachments?: components["schemas"]["LineAttachment"][];
         };
         /**
          * UtilizationLimits
@@ -1991,6 +2362,271 @@ export interface operations {
                 };
                 content: {
                     "application/pdf": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mooring_systems_api_v1_mooring_systems_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_MooringSystemSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mooring_system_api_v1_mooring_systems_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MooringSystemInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MooringSystemOutput"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_solve_api_v1_mooring_systems_preview_solve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MooringSystemInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MooringSystemResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mooring_system_api_v1_mooring_systems__msys_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msys_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MooringSystemOutput"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_mooring_system_api_v1_mooring_systems__msys_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msys_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MooringSystemInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MooringSystemOutput"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_mooring_system_api_v1_mooring_systems__msys_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msys_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    solve_mooring_system_api_v1_mooring_systems__msys_id__solve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msys_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MooringSystemExecutionOutput"];
                 };
             };
             /** @description Not Found */

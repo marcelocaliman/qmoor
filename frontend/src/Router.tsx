@@ -40,6 +40,21 @@ const ImportExportPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 )
+const MooringSystemsListPage = lazy(() =>
+  import('@/pages/MooringSystemsListPage').then((m) => ({
+    default: m.MooringSystemsListPage,
+  })),
+)
+const MooringSystemDetailPage = lazy(() =>
+  import('@/pages/MooringSystemDetailPage').then((m) => ({
+    default: m.MooringSystemDetailPage,
+  })),
+)
+const MooringSystemFormPage = lazy(() =>
+  import('@/pages/MooringSystemFormPage').then((m) => ({
+    default: m.MooringSystemFormPage,
+  })),
+)
 const NotFoundPage = lazy(() =>
   import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 )
@@ -69,6 +84,10 @@ const router = createBrowserRouter([
       { path: 'cases/compare', element: wrap(<CompareCasesPage />) },
       { path: 'cases/:id', element: wrap(<CaseDetailPage />) },
       { path: 'cases/:id/edit', element: wrap(<CaseFormPage />) },
+      { path: 'mooring-systems', element: wrap(<MooringSystemsListPage />) },
+      { path: 'mooring-systems/new', element: wrap(<MooringSystemFormPage />) },
+      { path: 'mooring-systems/:id', element: wrap(<MooringSystemDetailPage />) },
+      { path: 'mooring-systems/:id/edit', element: wrap(<MooringSystemFormPage />) },
       { path: 'catalog', element: wrap(<CatalogPage />) },
       { path: 'import-export', element: wrap(<ImportExportPage />) },
       { path: 'settings', element: wrap(<SettingsPage />) },

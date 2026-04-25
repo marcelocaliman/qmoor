@@ -27,6 +27,18 @@ export type SolutionMode = S['SolutionMode']
 export type ConvergenceStatus = S['ConvergenceStatus']
 export type AlertLevel = S['AlertLevel']
 export type CriteriaProfile = S['CriteriaProfile']
+
+// Mooring systems (F5.4)
+export type MooringSystemInput = S['MooringSystemInput']
+export type MooringSystemOutput = S['MooringSystemOutput']
+export type MooringSystemSummary = S['MooringSystemSummary']
+export type MooringSystemExecutionOutput = S['MooringSystemExecutionOutput']
+export type MooringSystemResult = S['MooringSystemResult']
+export type MooringLineResult = S['MooringLineResult']
+export type SystemLineSpec = S['SystemLineSpec']
+export type PaginatedResponse_MooringSystemSummary_ =
+  S['PaginatedResponse_MooringSystemSummary_']
+
 export type LineCategory =
   | 'Wire'
   | 'StuddedChain'

@@ -11,8 +11,13 @@ import type {
   LineTypeCreate,
   LineTypeOutput,
   LineTypeUpdate,
+  MooringSystemExecutionOutput,
+  MooringSystemInput,
+  MooringSystemOutput,
+  MooringSystemResult,
   PaginatedResponse_CaseSummary_,
   PaginatedResponse_LineTypeOutput_,
+  PaginatedResponse_MooringSystemSummary_,
   VersionResponse,
 } from './types'
 
@@ -118,6 +123,44 @@ export const updateLineType = (id: number, input: LineTypeUpdate) =>
 
 export const deleteLineType = (id: number) =>
   apiClient.delete(`/line-types/${id}`).then((r) => r.data)
+
+// ─────────────────────────────── mooring systems (F5.4) ───────────────────
+export interface ListMooringSystemsParams {
+  page?: number
+  page_size?: number
+  search?: string
+}
+
+export const listMooringSystems = (params?: ListMooringSystemsParams) =>
+  apiClient
+    .get<PaginatedResponse_MooringSystemSummary_>('/mooring-systems', { params })
+    .then((r) => r.data)
+
+export const getMooringSystem = (id: number) =>
+  apiClient.get<MooringSystemOutput>(`/mooring-systems/${id}`).then((r) => r.data)
+
+export const createMooringSystem = (input: MooringSystemInput) =>
+  apiClient
+    .post<MooringSystemOutput>('/mooring-systems', input)
+    .then((r) => r.data)
+
+export const updateMooringSystem = (id: number, input: MooringSystemInput) =>
+  apiClient
+    .put<MooringSystemOutput>(`/mooring-systems/${id}`, input)
+    .then((r) => r.data)
+
+export const deleteMooringSystem = (id: number) =>
+  apiClient.delete(`/mooring-systems/${id}`).then((r) => r.data)
+
+export const solveMooringSystem = (id: number) =>
+  apiClient
+    .post<MooringSystemExecutionOutput>(`/mooring-systems/${id}/solve`)
+    .then((r) => r.data)
+
+export const previewSolveMooringSystem = (input: MooringSystemInput) =>
+  apiClient
+    .post<MooringSystemResult>('/mooring-systems/preview-solve', input)
+    .then((r) => r.data)
 
 // ─────────────────────────────── import/export ─────────────────────────────
 export const importMoor = (payload: Record<string, unknown>) =>

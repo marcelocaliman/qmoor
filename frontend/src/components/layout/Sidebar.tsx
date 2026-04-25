@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  Compass,
   LayoutList,
   Package,
   Settings,
@@ -24,6 +25,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Casos', to: '/cases', icon: LayoutList },
+  { label: 'Mooring systems', to: '/mooring-systems', icon: Compass },
   { label: 'Catálogo', to: '/catalog', icon: Package },
   { label: 'Importar/Exportar', to: '/import-export', icon: ArrowLeftRight },
   { label: 'Configurações', to: '/settings', icon: Settings },
