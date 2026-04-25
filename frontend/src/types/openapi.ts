@@ -940,6 +940,11 @@ export interface components {
              * @description Identificador legível para relatórios (ex.: 'Boia A')
              */
             name?: string | null;
+            /**
+             * Tether Length
+             * @description Comprimento do pendant/cabo de conexão entre o corpo (boia ou clump) e a linha principal, em metros. Quando informado, indica que o corpo está a essa distância vertical do ponto de attachment na linha. Para análise estática com pendant taut, `submerged_force` deve ser informado como o EFEITO LÍQUIDO no ponto de conexão (empuxo do corpo menos peso do pendant). O solver não usa `tether_length` no cálculo — ele alimenta apenas a visualização.
+             */
+            tether_length?: number | null;
         };
         /**
          * LineSegment

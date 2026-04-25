@@ -249,6 +249,21 @@ class LineAttachment(BaseModel):
         default=None, max_length=80,
         description="Identificador legível para relatórios (ex.: 'Boia A')",
     )
+    tether_length: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Comprimento do pendant/cabo de conexão entre o corpo "
+            "(boia ou clump) e a linha principal, em metros. "
+            "Quando informado, indica que o corpo está a essa "
+            "distância vertical do ponto de attachment na linha. "
+            "Para análise estática com pendant taut, `submerged_force` "
+            "deve ser informado como o EFEITO LÍQUIDO no ponto de "
+            "conexão (empuxo do corpo menos peso do pendant). O "
+            "solver não usa `tether_length` no cálculo — ele "
+            "alimenta apenas a visualização."
+        ),
+    )
 
     @model_validator(mode="after")
     def _exactly_one_position(self) -> "LineAttachment":

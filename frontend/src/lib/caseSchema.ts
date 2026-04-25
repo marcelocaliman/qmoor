@@ -24,6 +24,7 @@ export const lineAttachmentSchema = z
     position_index: z.number().int().min(0).nullable().optional(),
     position_s_from_anchor: z.number().positive().nullable().optional(),
     name: z.string().trim().max(80).nullable().optional(),
+    tether_length: z.number().positive().nullable().optional(),
   })
   .refine(
     (a) =>

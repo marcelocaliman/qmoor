@@ -612,17 +612,51 @@ export function CatenaryPlot({
         const px = curve.plotX[idxPlot]
         const py = curve.plotY[idxPlot]
         if (px == null || py == null) continue
+        // F5.6.7 — Tether (pendant): boia fica deslocada PARA CIMA
+        // da linha pelo comprimento do pendant; clump fica DESCIDO.
+        // Hover marker fica na posição do CORPO (não do ponto de
+        // conexão) para o tooltip aparecer onde o ícone está.
+        const tetherLen =
+          (att as { tether_length?: number | null }).tether_length ?? 0
+        const dy =
+          tetherLen > 0
+            ? (att.kind === 'buoy' ? +tetherLen : -tetherLen)
+            : 0
+        const bodyY = py + dy
         const label = att.name
-          ? `${att.name} (${(att.submerged_force / 1000).toFixed(1)} kN)`
-          : `${att.kind === 'buoy' ? 'Boia' : 'Clump'} (${(att.submerged_force / 1000).toFixed(1)} kN)`
+          ? `${att.name} (${(att.submerged_force / 1000).toFixed(1)} kN)` +
+            (tetherLen > 0 ? ` · pendant ${tetherLen.toFixed(1)} m` : '')
+          : `${att.kind === 'buoy' ? 'Boia' : 'Clump'} ` +
+            `(${(att.submerged_force / 1000).toFixed(1)} kN)` +
+            (tetherLen > 0 ? ` · pendant ${tetherLen.toFixed(1)} m` : '')
         if (att.kind === 'buoy') {
           buoyX.push(px)
-          buoyY.push(py)
+          buoyY.push(bodyY)
           buoyText.push(label)
         } else {
           clumpX.push(px)
-          clumpY.push(py)
+          clumpY.push(bodyY)
           clumpText.push(label)
+        }
+        // Linha do pendant (cabo de conexão) — só desenhada quando
+        // tether_length > 0; conecta o ponto na linha ao corpo.
+        if (tetherLen > 0) {
+          traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: [px, px],
+            y: [py, bodyY],
+            line: {
+              color:
+                att.kind === 'buoy'
+                  ? palette.buoyIconColor
+                  : palette.clumpIconColor,
+              width: 1.2,
+              dash: 'dot',
+            },
+            showlegend: false,
+            hoverinfo: 'skip',
+          })
         }
       }
       if (buoyX.length > 0) {
@@ -780,6 +814,18 @@ export function CatenaryPlot({
         const px = curve.plotX[idxPlot]
         const py = curve.plotY[idxPlot]
         if (px == null || py == null) continue
+        // F5.6.7 — Tether (pendant) opcional. Quando informado,
+        // desloca o ícone do corpo VERTICALMENTE pelo comprimento
+        // do pendant: boia sobe (em direção à superfície), clump
+        // desce (em direção ao seabed). Linha principal continua
+        // no ponto de conexão; só o ícone do corpo é deslocado.
+        const tetherLen =
+          (att as { tether_length?: number | null }).tether_length ?? 0
+        const dy =
+          tetherLen > 0
+            ? (att.kind === 'buoy' ? +tetherLen : -tetherLen)
+            : 0
+        const iconY = py + dy
         const svg =
           att.kind === 'buoy'
             ? buoySvg(palette.buoyIconColor)
@@ -789,7 +835,7 @@ export function CatenaryPlot({
           xref: 'x',
           yref: 'y',
           x: px,
-          y: py,
+          y: iconY,
           sizex: axData,
           sizey: ayData,
           xanchor: 'center',

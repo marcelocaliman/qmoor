@@ -1,4 +1,5 @@
 import { Anchor, Plus, Trash2, Waves } from 'lucide-react'
+import { useEffect } from 'react'
 import {
   Controller,
   useWatch,
@@ -56,9 +57,17 @@ export interface AttachmentsEditorProps<
 
 /**
  * Editor de attachments (boias e clump weights).
- * Cada attachment fica numa junção entre dois segmentos (position_index =
- * 0 → entre seg 0 e seg 1, etc.). Quando há apenas 1 segmento, mostra
- * estado vazio com instrução para adicionar mais segmentos antes.
+ *
+ * F5.4.6a: attachments podem ficar em qualquer arc length da linha
+ * (`position_s_from_anchor` em metros) — o solver divide o segmento
+ * que contém aquela posição automaticamente em sub-segmentos do
+ * mesmo material. Por isso, basta **1 segmento** para adicionar
+ * boia/clump (a versão antiga exigia 2+ porque só aceitava em
+ * junções pré-existentes).
+ *
+ * O modo "junção" (legacy) ainda é exposto via toggle — útil quando
+ * a linha tem materiais diferentes e o usuário quer fixar o
+ * attachment exatamente na fronteira dos segmentos.
  */
 export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
   control,
@@ -70,7 +79,11 @@ export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
   totalLength,
 }: AttachmentsEditorProps<T>) {
   const maxJunctions = Math.max(0, segmentCount - 1)
-  const canAdd = segmentCount >= 2
+  // F5.4.6a/F5.6: precisa de pelo menos 1 segmento. Modo distância
+  // funciona com qualquer N ≥ 1; modo junção precisaria N ≥ 2 mas
+  // o toggle só fica disponível quando aplicável (lógica no Row).
+  const canAdd = segmentCount >= 1
+  const hasJunctions = segmentCount >= 2
 
   const allFields = attachments.fields as unknown as Array<{
     id: string
@@ -130,7 +143,7 @@ export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
         </span>
         {!canAdd && (
           <span className="ml-auto text-[10px] text-muted-foreground/70">
-            adicione 2+ segmentos para usar
+            adicione 1+ segmento para usar
           </span>
         )}
       </div>
@@ -151,6 +164,7 @@ export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
                 control={control}
                 setValue={setValue}
                 maxJunction={maxJunctions - 1}
+                hasJunctions={hasJunctions}
                 showKindSelect={!kind}
                 basePath={basePath}
                 totalLength={totalLength}
@@ -181,6 +195,7 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
   control,
   setValue,
   maxJunction,
+  hasJunctions,
   showKindSelect,
   basePath,
   totalLength,
@@ -190,6 +205,7 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
   control: Control<T>
   setValue: UseFormSetValue<T>
   maxJunction: number
+  hasJunctions: boolean
   showKindSelect: boolean
   basePath: string
   totalLength?: number
@@ -202,6 +218,20 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
   const positionS = useWatch({ control, name: p('position_s_from_anchor') })
   const mode: 'distance' | 'junction' =
     positionS != null ? 'distance' : 'junction'
+
+  // Se o usuário tinha um attachment em modo "junção" e depois removeu
+  // segmentos a ponto de não haver mais junções (1 segmento só),
+  // migra automaticamente para modo "distância" para evitar erro
+  // INVALID_CASE no solver.
+  useEffect(() => {
+    if (!hasJunctions && mode === 'junction') {
+      setValue(p('position_s_from_anchor'), 100 as never, {
+        shouldValidate: true,
+      })
+      setValue(p('position_index'), null as never, { shouldValidate: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasJunctions])
 
   function setMode(next: 'distance' | 'junction') {
     if (next === mode) return
@@ -321,16 +351,18 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
             <Label className="text-[10px] font-medium text-muted-foreground">
               {mode === 'distance' ? 'Distância da âncora (m)' : 'Junção'}
             </Label>
-            <button
-              type="button"
-              onClick={() =>
-                setMode(mode === 'distance' ? 'junction' : 'distance')
-              }
-              className="text-[9px] uppercase tracking-wide text-primary hover:underline"
-              title="Alternar modo de posicionamento"
-            >
-              {mode === 'distance' ? '↺ junção' : '↺ distância'}
-            </button>
+            {hasJunctions && (
+              <button
+                type="button"
+                onClick={() =>
+                  setMode(mode === 'distance' ? 'junction' : 'distance')
+                }
+                className="text-[9px] uppercase tracking-wide text-primary hover:underline"
+                title="Alternar modo de posicionamento"
+              >
+                {mode === 'distance' ? '↺ junção' : '↺ distância'}
+              </button>
+            )}
           </div>
           {mode === 'distance' ? (
             <Controller
@@ -378,6 +410,42 @@ function AttachmentRow<T extends FieldValues = CaseFormValues>({
             />
           )}
         </div>
+      </div>
+      {/* F5.6.7 — Tether (pendant): comprimento do cabo de conexão
+          entre o corpo (boia/clump) e a linha principal. Em mooring
+          real, boias quase sempre ficam ligadas à linha principal
+          via pendant; valor opcional aqui afeta apenas a
+          visualização (corpo desenhado deslocado da linha por essa
+          distância). A força submersa permanece o EFEITO LÍQUIDO
+          no ponto de conexão. */}
+      <div className="flex items-center gap-2">
+        <Label className="shrink-0 text-[10px] font-medium text-muted-foreground">
+          Pendant (m)
+        </Label>
+        <Controller
+          control={control}
+          name={p('tether_length')}
+          render={({ field }) => (
+            <Input
+              type="number"
+              min={0}
+              step={0.5}
+              value={(field.value as number | null) ?? ''}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value || '')
+                field.onChange(Number.isFinite(v) && v > 0 ? v : null)
+              }}
+              placeholder="0 = direto na linha"
+              className="h-7 flex-1 font-mono text-xs"
+              title={
+                'Comprimento do pendant (cabo de conexão) entre o ' +
+                'corpo e a linha principal. A força submersa deve ' +
+                'continuar sendo o efeito líquido no ponto de ' +
+                'conexão (empuxo do corpo menos peso do pendant).'
+              }
+            />
+          )}
+        />
       </div>
     </div>
   )
