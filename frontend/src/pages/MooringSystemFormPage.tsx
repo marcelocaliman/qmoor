@@ -23,7 +23,9 @@ import {
   updateMooringSystem,
 } from '@/api/endpoints'
 import type { MooringSystemInput, MooringSystemResult } from '@/api/types'
+import { AttachmentsEditor } from '@/components/common/AttachmentsEditor'
 import { MooringSystemPlanView } from '@/components/common/MooringSystemPlanView'
+import { SegmentEditor } from '@/components/common/SegmentEditor'
 import { UnitInput } from '@/components/common/UnitInput'
 import { Topbar } from '@/components/layout/Topbar'
 import { Button } from '@/components/ui/button'
@@ -102,6 +104,7 @@ export function MooringSystemFormPage() {
     control,
     handleSubmit,
     watch,
+    setValue,
     reset,
     formState: { isSubmitting },
   } = form
@@ -318,7 +321,13 @@ export function MooringSystemFormPage() {
                   key={field.id}
                   className={idx === activeLine ? '' : 'hidden'}
                 >
-                  <LineForm index={idx} control={control} register={register} />
+                  <LineForm
+                    index={idx}
+                    control={control}
+                    register={register}
+                    watch={watch}
+                    setValue={setValue}
+                  />
                 </div>
               ))}
             </div>
@@ -386,20 +395,34 @@ function LineForm({
   index,
   control,
   register,
+  watch,
+  setValue,
 }: {
   index: number
   control: import('react-hook-form').Control<MooringSystemInput>
   register: import('react-hook-form').UseFormRegister<MooringSystemInput>
+  watch: import('react-hook-form').UseFormWatch<MooringSystemInput>
+  setValue: import('react-hook-form').UseFormSetValue<MooringSystemInput>
 }) {
   const base = `lines.${index}` as const
+  // useFieldArray nested: cada linha tem seu próprio array de
+  // `segments` e `attachments` dentro de `lines.${index}`.
+  const segArray = useFieldArray({
+    control,
+    name: `${base}.segments` as const,
+  })
+  const attArray = useFieldArray({
+    control,
+    name: `${base}.attachments` as const,
+  })
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="space-y-4">
       {/* Identidade + posição */}
       <Card>
         <div className="border-b border-border/60 bg-muted/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Identidade & posição
         </div>
-        <CardContent className="grid grid-cols-2 gap-2 p-3">
+        <CardContent className="grid grid-cols-1 gap-3 p-3 md:grid-cols-3">
           <Field label="Nome">
             <Input
               {...register(`${base}.name` as const)}
@@ -419,7 +442,7 @@ function LineForm({
               className="h-8 font-mono"
             />
           </Field>
-          <Field label="Raio do fairlead (m)" className="col-span-2">
+          <Field label="Raio do fairlead (m)">
             <Input
               type="number"
               step="0.5"
@@ -433,94 +456,98 @@ function LineForm({
         </CardContent>
       </Card>
 
-      {/* Segmento (apenas o primeiro neste form simplificado) */}
+      {/* Segmentos da linha (multi-segmento, mesmo padrão da CaseFormPage) */}
       <Card>
-        <div className="border-b border-border/60 bg-muted/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          Segmento
+        <div className="flex items-center gap-2 border-b border-border/60 bg-muted/10 px-3 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Segmentos ({segArray.fields.length})
+          </span>
         </div>
-        <CardContent className="grid grid-cols-2 gap-2 p-3">
-          <Field label="Categoria" className="col-span-2">
-            <Controller
-              control={control}
-              name={`${base}.segments.0.category` as const}
-              render={({ field }) => (
-                <Select
-                  value={field.value ?? undefined}
-                  onValueChange={field.onChange}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Wire">Wire</SelectItem>
-                    <SelectItem value="StuddedChain">Studded chain</SelectItem>
-                    <SelectItem value="StudlessChain">Studless chain</SelectItem>
-                    <SelectItem value="Polyester">Poliéster</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </Field>
-          <Field label="Comprimento (m)">
-            <Input
-              type="number"
-              step="1"
-              {...register(`${base}.segments.0.length` as const, {
-                valueAsNumber: true,
-              })}
-              className="h-8 font-mono"
-            />
-          </Field>
-          <Field label="Peso submerso">
-            <Controller
-              control={control}
-              name={`${base}.segments.0.w` as const}
-              render={({ field }) => (
-                <UnitInput
-                  value={field.value}
-                  onChange={field.onChange}
-                  quantity="force_per_m"
-                  digits={2}
-                  className="h-8"
+        <CardContent className="space-y-3 p-3">
+          <div className="flex flex-wrap gap-2">
+            {segArray.fields.map((field, segIdx) => (
+              <div
+                key={field.id}
+                className="min-w-[280px] max-w-[360px] flex-1"
+              >
+                <SegmentEditor<MooringSystemInput>
+                  index={segIdx}
+                  total={segArray.fields.length}
+                  control={control}
+                  register={register}
+                  watch={watch}
+                  setValue={setValue}
+                  basePath={`${base}.segments`}
+                  onMoveUp={
+                    segIdx > 0
+                      ? () => segArray.move(segIdx, segIdx - 1)
+                      : undefined
+                  }
+                  onMoveDown={
+                    segIdx < segArray.fields.length - 1
+                      ? () => segArray.move(segIdx, segIdx + 1)
+                      : undefined
+                  }
+                  onRemove={
+                    segArray.fields.length > 1
+                      ? () => segArray.remove(segIdx)
+                      : undefined
+                  }
                 />
-              )}
-            />
-          </Field>
-          <Field label="EA">
-            <Controller
-              control={control}
-              name={`${base}.segments.0.EA` as const}
-              render={({ field }) => (
-                <UnitInput
-                  value={field.value}
-                  onChange={field.onChange}
-                  quantity="force"
-                  digits={2}
-                  className="h-8"
-                />
-              )}
-            />
-          </Field>
-          <Field label="MBL">
-            <Controller
-              control={control}
-              name={`${base}.segments.0.MBL` as const}
-              render={({ field }) => (
-                <UnitInput
-                  value={field.value}
-                  onChange={field.onChange}
-                  quantity="force"
-                  digits={2}
-                  className="h-8"
-                />
-              )}
-            />
-          </Field>
+              </div>
+            ))}
+            {segArray.fields.length < 10 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-auto min-h-[44px] min-w-[280px] max-w-[360px] flex-1 gap-1.5 border-dashed text-[11px]"
+                onClick={() => {
+                  const last = segArray.fields[
+                    segArray.fields.length - 1
+                  ] as unknown as MooringSystemInput['lines'][number]['segments'][number]
+                  segArray.append({ ...last, length: 100 })
+                }}
+              >
+                + Adicionar segmento
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
+      {/* Boias e Clumps na linha */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <AttachmentsEditor<MooringSystemInput>
+          control={control}
+          attachments={
+            attArray as unknown as import('react-hook-form').UseFieldArrayReturn<
+              MooringSystemInput,
+              never,
+              'id'
+            >
+          }
+          segmentCount={segArray.fields.length}
+          kind="buoy"
+          basePath={`${base}.attachments`}
+        />
+        <AttachmentsEditor<MooringSystemInput>
+          control={control}
+          attachments={
+            attArray as unknown as import('react-hook-form').UseFieldArrayReturn<
+              MooringSystemInput,
+              never,
+              'id'
+            >
+          }
+          segmentCount={segArray.fields.length}
+          kind="clump_weight"
+          basePath={`${base}.attachments`}
+        />
+      </div>
+
       {/* Boundary + seabed */}
-      <Card className="md:col-span-2">
+      <Card>
         <div className="border-b border-border/60 bg-muted/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Contorno & ambiente
         </div>

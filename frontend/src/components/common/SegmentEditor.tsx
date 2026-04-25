@@ -2,6 +2,8 @@ import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
 import {
   Controller,
   type Control,
+  type FieldValues,
+  type Path,
   type UseFormRegister,
   type UseFormWatch,
   type UseFormSetValue,
@@ -23,56 +25,67 @@ import type { CaseFormValues } from '@/lib/caseSchema'
 import { cn, fmtDiameterMM, fmtNumber } from '@/lib/utils'
 import { toast } from 'sonner'
 
-export interface SegmentEditorProps {
+export interface SegmentEditorProps<T extends FieldValues = CaseFormValues> {
   index: number
   total: number
-  control: Control<CaseFormValues>
-  register: UseFormRegister<CaseFormValues>
-  watch: UseFormWatch<CaseFormValues>
-  setValue: UseFormSetValue<CaseFormValues>
+  control: Control<T>
+  register: UseFormRegister<T>
+  watch: UseFormWatch<T>
+  setValue: UseFormSetValue<T>
+  /**
+   * Caminho-base para os segmentos no form (default `'segments'`).
+   * Use, por exemplo, `'lines.0.segments'` para reusar este editor
+   * dentro de um sistema multi-linha onde cada linha tem seu próprio
+   * array de segmentos.
+   */
+  basePath?: string
   onRemove?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
 }
 
 /**
- * Editor de um único segmento dentro do form de caso. Recebe o `index`
- * para que todos os campos apontem para `segments[index].*`. Estado vive
+ * Editor de um único segmento. Recebe o `index` e um `basePath` para
+ * que todos os campos apontem para `${basePath}[index].*`. Estado vive
  * no react-hook-form do pai; aqui só renderizamos.
  *
  * Convenção de ordem:
  *   - index 0 é o segmento mais próximo da âncora (chain inferior, etc.)
  *   - último index é o segmento mais próximo do fairlead
  */
-export function SegmentEditor({
+export function SegmentEditor<T extends FieldValues = CaseFormValues>({
   index,
   total,
   control,
   register,
   watch,
   setValue,
+  basePath = 'segments',
   onRemove,
   onMoveUp,
   onMoveDown,
-}: SegmentEditorProps) {
+}: SegmentEditorProps<T>) {
+  // Helper: junta basePath + índice + sufixo, com cast de tipo confinado
+  // (Path<T> em runtime é só uma string; o react-hook-form despacha por
+  // string interna). Mantém o boundary do componente tipado.
+  const p = (suffix: string): Path<T> =>
+    `${basePath}.${index}.${suffix}` as Path<T>
+
   function applyLineTypeToSegment(lt: LineTypeOutput | null) {
     if (!lt) return
-    const base = `segments.${index}` as const
-    setValue(`${base}.line_type`, lt.line_type, { shouldValidate: true })
+    setValue(p('line_type'), lt.line_type as never, { shouldValidate: true })
+    setValue(p('category'), lt.category as never, { shouldValidate: true })
+    setValue(p('w'), roundTo(lt.wet_weight, 2) as never, { shouldValidate: true })
     setValue(
-      `${base}.category`,
-      lt.category as CaseFormValues['segments'][number]['category'],
+      p('EA'),
+      roundTo(lt.qmoor_ea ?? lt.gmoor_ea ?? 0, 0) as never,
       { shouldValidate: true },
     )
-    setValue(`${base}.w`, roundTo(lt.wet_weight, 2), { shouldValidate: true })
-    setValue(`${base}.EA`, roundTo(lt.qmoor_ea ?? lt.gmoor_ea ?? 0, 0), {
-      shouldValidate: true,
-    })
-    setValue(`${base}.MBL`, roundTo(lt.break_strength, 0), { shouldValidate: true })
-    setValue(`${base}.diameter`, roundTo(lt.diameter, 5), { shouldValidate: true })
-    setValue(`${base}.dry_weight`, roundTo(lt.dry_weight, 2), { shouldValidate: true })
+    setValue(p('MBL'), roundTo(lt.break_strength, 0) as never, { shouldValidate: true })
+    setValue(p('diameter'), roundTo(lt.diameter, 5) as never, { shouldValidate: true })
+    setValue(p('dry_weight'), roundTo(lt.dry_weight, 2) as never, { shouldValidate: true })
     if (lt.modulus) {
-      setValue(`${base}.modulus`, roundTo(lt.modulus, 0), { shouldValidate: true })
+      setValue(p('modulus'), roundTo(lt.modulus, 0) as never, { shouldValidate: true })
     }
     toast.success(`${lt.line_type} aplicado ao segmento ${index + 1}`, {
       description: `Ø ${fmtDiameterMM(lt.diameter, 0)} · MBL ${fmtNumber(
@@ -143,20 +156,21 @@ export function SegmentEditor({
 
       <Controller
         control={control}
-        name={`segments.${index}.line_type`}
+        name={p('line_type')}
         render={({ field }) => (
           <LineTypePicker
             value={
               field.value
                 ? ({
                     id: 0,
-                    line_type: field.value,
-                    category: watch(`segments.${index}.category`) ?? 'Wire',
-                    diameter: watch(`segments.${index}.diameter`) ?? 0,
-                    dry_weight: watch(`segments.${index}.dry_weight`) ?? 0,
-                    wet_weight: watch(`segments.${index}.w`),
-                    break_strength: watch(`segments.${index}.MBL`),
-                    qmoor_ea: watch(`segments.${index}.EA`),
+                    line_type: field.value as string,
+                    category:
+                      (watch(p('category')) as string | null) ?? 'Wire',
+                    diameter: (watch(p('diameter')) as number) ?? 0,
+                    dry_weight: (watch(p('dry_weight')) as number) ?? 0,
+                    wet_weight: watch(p('w')) as number,
+                    break_strength: watch(p('MBL')) as number,
+                    qmoor_ea: watch(p('EA')) as number,
                     data_source: 'legacy_qmoor',
                   } as LineTypeOutput)
                 : null
@@ -171,7 +185,7 @@ export function SegmentEditor({
           <Input
             type="number"
             step="1"
-            {...register(`segments.${index}.length`, { valueAsNumber: true })}
+            {...register(p('length'), { valueAsNumber: true })}
             className="h-8 font-mono"
           />
         </InlineLabeled>
@@ -180,17 +194,17 @@ export function SegmentEditor({
             type="number"
             step="0.001"
             min="0"
-            {...register(`segments.${index}.diameter`, { valueAsNumber: true })}
+            {...register(p('diameter'), { valueAsNumber: true })}
             className="h-8 font-mono"
           />
         </InlineLabeled>
         <InlineLabeled label="Categoria" className="col-span-2">
           <Controller
             control={control}
-            name={`segments.${index}.category`}
+            name={p('category')}
             render={({ field }) => (
               <Select
-                value={field.value ?? undefined}
+                value={(field.value as string | undefined) ?? undefined}
                 onValueChange={field.onChange}
               >
                 <SelectTrigger className="h-8">
@@ -209,10 +223,10 @@ export function SegmentEditor({
         <InlineLabeled label="Peso submerso">
           <Controller
             control={control}
-            name={`segments.${index}.w`}
+            name={p('w')}
             render={({ field }) => (
               <UnitInput
-                value={field.value}
+                value={field.value as number}
                 onChange={field.onChange}
                 quantity="force_per_m"
                 digits={2}
@@ -224,10 +238,10 @@ export function SegmentEditor({
         <InlineLabeled label="Peso seco">
           <Controller
             control={control}
-            name={`segments.${index}.dry_weight`}
+            name={p('dry_weight')}
             render={({ field }) => (
               <UnitInput
-                value={field.value ?? null}
+                value={(field.value as number | null) ?? null}
                 onChange={field.onChange}
                 quantity="force_per_m"
                 digits={2}
@@ -239,10 +253,10 @@ export function SegmentEditor({
         <InlineLabeled label="EA">
           <Controller
             control={control}
-            name={`segments.${index}.EA`}
+            name={p('EA')}
             render={({ field }) => (
               <UnitInput
-                value={field.value}
+                value={field.value as number}
                 onChange={field.onChange}
                 quantity="force"
                 digits={2}
@@ -254,10 +268,10 @@ export function SegmentEditor({
         <InlineLabeled label="MBL">
           <Controller
             control={control}
-            name={`segments.${index}.MBL`}
+            name={p('MBL')}
             render={({ field }) => (
               <UnitInput
-                value={field.value}
+                value={field.value as number}
                 onChange={field.onChange}
                 quantity="force"
                 digits={2}
@@ -270,7 +284,7 @@ export function SegmentEditor({
           <Input
             type="number"
             step="1e9"
-            {...register(`segments.${index}.modulus`, { valueAsNumber: true })}
+            {...register(p('modulus'), { valueAsNumber: true })}
             className="h-8 font-mono"
           />
         </InlineLabeled>

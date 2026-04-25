@@ -2,6 +2,8 @@ import { Anchor, Plus, Trash2, Waves } from 'lucide-react'
 import {
   Controller,
   type Control,
+  type FieldValues,
+  type Path,
   type UseFieldArrayReturn,
 } from 'react-hook-form'
 import { UnitInput } from '@/components/common/UnitInput'
@@ -19,15 +21,23 @@ import type { AttachmentKind } from '@/api/types'
 import type { CaseFormValues } from '@/lib/caseSchema'
 import { cn } from '@/lib/utils'
 
-export interface AttachmentsEditorProps {
-  control: Control<CaseFormValues>
-  attachments: UseFieldArrayReturn<CaseFormValues, 'attachments', 'id'>
+export interface AttachmentsEditorProps<
+  T extends FieldValues = CaseFormValues,
+> {
+  control: Control<T>
+  attachments: UseFieldArrayReturn<T, never, 'id'>
   segmentCount: number
   /**
    * Quando definido, mostra somente itens deste tipo (boias OU clumps).
    * Sem o filtro, mostra ambos junto com seletor de tipo (modo legacy).
    */
   kind?: AttachmentKind
+  /**
+   * Caminho-base para o array no form (default `'attachments'`).
+   * Use, por exemplo, `'lines.0.attachments'` para reusar este editor
+   * dentro de um sistema multi-linha.
+   */
+  basePath?: string
 }
 
 /**
@@ -36,12 +46,13 @@ export interface AttachmentsEditorProps {
  * 0 → entre seg 0 e seg 1, etc.). Quando há apenas 1 segmento, mostra
  * estado vazio com instrução para adicionar mais segmentos antes.
  */
-export function AttachmentsEditor({
+export function AttachmentsEditor<T extends FieldValues = CaseFormValues>({
   control,
   attachments,
   segmentCount,
   kind,
-}: AttachmentsEditorProps) {
+  basePath = 'attachments',
+}: AttachmentsEditorProps<T>) {
   const maxJunctions = Math.max(0, segmentCount - 1)
   const canAdd = segmentCount >= 2
 
@@ -74,7 +85,7 @@ export function AttachmentsEditor({
       submerged_force: 50_000,
       position_index: Math.min(firstFree, maxJunctions - 1),
       name: null,
-    })
+    } as never)
   }
 
   const emptyMsg =
@@ -124,6 +135,7 @@ export function AttachmentsEditor({
                 control={control}
                 maxJunction={maxJunctions - 1}
                 showKindSelect={!kind}
+                basePath={basePath}
                 onRemove={() => attachments.remove(realIdx)}
               />
             </div>
@@ -146,25 +158,29 @@ export function AttachmentsEditor({
   )
 }
 
-function AttachmentRow({
+function AttachmentRow<T extends FieldValues = CaseFormValues>({
   realIndex,
   control,
   maxJunction,
   showKindSelect,
+  basePath,
   onRemove,
 }: {
   realIndex: number
-  control: Control<CaseFormValues>
+  control: Control<T>
   maxJunction: number
   showKindSelect: boolean
+  basePath: string
   onRemove: () => void
 }) {
+  const p = (suffix: string): Path<T> =>
+    `${basePath}.${realIndex}.${suffix}` as Path<T>
   return (
     <div className="space-y-2 rounded-md border border-border/40 bg-background p-2">
       <div className="flex items-center gap-2">
         <Controller
           control={control}
-          name={`attachments.${realIndex}.kind`}
+          name={p('kind')}
           render={({ field }) => (
             <span
               className={cn(
@@ -185,11 +201,11 @@ function AttachmentRow({
         />
         <Controller
           control={control}
-          name={`attachments.${realIndex}.name`}
+          name={p('name')}
           render={({ field }) => (
             <Input
               type="text"
-              value={field.value ?? ''}
+              value={(field.value as string | null) ?? ''}
               onChange={(e) => field.onChange(e.target.value || null)}
               placeholder="Nome (opcional)"
               className="h-7 flex-1 text-xs"
@@ -221,9 +237,12 @@ function AttachmentRow({
             </Label>
             <Controller
               control={control}
-              name={`attachments.${realIndex}.kind`}
+              name={p('kind')}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select
+                  value={field.value as string}
+                  onValueChange={field.onChange}
+                >
                   <SelectTrigger className="h-8">
                     <SelectValue />
                   </SelectTrigger>
@@ -242,10 +261,10 @@ function AttachmentRow({
           </Label>
           <Controller
             control={control}
-            name={`attachments.${realIndex}.submerged_force`}
+            name={p('submerged_force')}
             render={({ field }) => (
               <UnitInput
-                value={field.value}
+                value={field.value as number}
                 onChange={field.onChange}
                 quantity="force"
                 digits={2}
@@ -260,19 +279,21 @@ function AttachmentRow({
           </Label>
           <Controller
             control={control}
-            name={`attachments.${realIndex}.position_index`}
+            name={p('position_index')}
             render={({ field }) => (
               <Input
                 type="number"
                 min={0}
                 max={maxJunction}
                 step={1}
-                value={field.value ?? 0}
+                value={(field.value as number | null) ?? 0}
                 onChange={(e) =>
                   field.onChange(parseInt(e.target.value || '0', 10))
                 }
                 className="h-8 font-mono"
-                title={`Entre seg ${(field.value ?? 0) + 1} e seg ${(field.value ?? 0) + 2}`}
+                title={`Entre seg ${
+                  ((field.value as number | null) ?? 0) + 1
+                } e seg ${((field.value as number | null) ?? 0) + 2}`}
               />
             )}
           />

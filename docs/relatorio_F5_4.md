@@ -18,7 +18,8 @@ Faseamento adotado:
 | F5.4.2   | Solver dispatcher + agregação de forças + endpoints API + retenção  | ✅ |
 | F5.4.3   | BCs de validação adicionais (simetria/equilíbrio, asymm extremos)   | ⬜ |
 | F5.4.4   | Frontend: lista + edição + detalhe + plan view polar                | ✅ |
-| F5.4.5   | Refinamentos UX: multi-segmento por linha, attachments, animações   | ⬜ |
+| F5.4.5a  | Multi-segmento + attachments por linha (reuso de SegmentEditor)     | ✅ |
+| F5.4.5b  | Animações + comparação multi-execução                               | ⬜ |
 
 ---
 
@@ -307,10 +308,86 @@ chunk separado.
 
 ---
 
-## Próximo passo: F5.4.5 — Refinamentos UX
+---
 
-1. Multi-segmento por linha no form (reusar `SegmentEditor`).
-2. `LineTypePicker` integrado por linha.
-3. Attachments por linha.
-4. Animação suave do plan view ao trocar parâmetros.
-5. Painel de comparação multi-execução (overlay de plan views).
+## F5.4.5a — entrega (multi-segmento + attachments por linha)
+
+`SegmentEditor` e `AttachmentsEditor` foram generalizados para aceitar
+um caminho-base configurável, permitindo reuso integral dentro do form
+do mooring system.
+
+### Refactor dos editores
+
+[`SegmentEditor.tsx`](../frontend/src/components/common/SegmentEditor.tsx):
+
+```tsx
+export interface SegmentEditorProps<T extends FieldValues = CaseFormValues> {
+  index: number
+  total: number
+  control: Control<T>
+  register: UseFormRegister<T>
+  watch: UseFormWatch<T>
+  setValue: UseFormSetValue<T>
+  basePath?: string  // default 'segments'
+  onRemove?, onMoveUp?, onMoveDown?
+}
+```
+
+Mudanças:
+
+- Generic `<T extends FieldValues>` com default `CaseFormValues` — o
+  uso existente em `CaseFormPage` continua funcionando sem alteração.
+- Helper interno `p(suffix)` que constrói paths como
+  `\`${basePath}.${index}.${suffix}\`` com cast `as Path<T>`.
+- Todos os `register`, `watch`, `setValue`, `Controller name=` agora
+  usam `p(...)` em vez de `\`segments.${index}.x\`` hard-coded.
+
+`AttachmentsEditor` ganhou tratamento simétrico — generic `<T>`,
+`basePath?: string` (default `'attachments'`), e `AttachmentRow`
+internalizou o helper `p`.
+
+### Form integrado
+
+[`MooringSystemFormPage.tsx`](../frontend/src/pages/MooringSystemFormPage.tsx)
+substituiu o form simplificado por linha (1 segmento + boundary)
+por:
+
+- **Identidade & posição** (nome, azimuth, raio).
+- **Segmentos** — `useFieldArray` em `lines.${idx}.segments` com layout
+  flex-wrap reutilizando `<SegmentEditor basePath={\`lines.${idx}.segments\`}>`.
+  Multi-segmento, mover up/down, adicionar/remover, e o
+  `LineTypePicker` que vem dentro do `SegmentEditor` (com toast e
+  preenchimento automático de w/EA/MBL/diâmetro/etc.).
+- **Boias e Clumps** — duas instâncias de `<AttachmentsEditor>` lado a
+  lado (`kind='buoy'` e `kind='clump_weight'`) sobre o mesmo array
+  `lines.${idx}.attachments`.
+- **Contorno & ambiente** — h, modo (Tension/Range), input_value, μ.
+
+### Validação
+
+- `npx tsc -b --force` ✅
+- `npm run build` ✅ (1.76s)
+- `vitest run` ✅ (8 testes)
+- Backend `pytest backend/` ✅ (221 testes)
+
+### Decisão
+
+**Cast `as Path<T>` ao construir caminhos via string.** O sistema de
+paths do `react-hook-form` aceita strings em runtime; o tipo
+`Path<T>` é uma união infinita gerada do schema do form e impossível
+de derivar a partir de templates dinâmicos sem conditional types
+profundos. O cast confina a perda de checagem ao corpo dos dois
+editores; consumidores (`CaseFormPage`, `MooringSystemFormPage`)
+continuam totalmente tipados via `<T extends FieldValues>`.
+
+---
+
+## Próximo passo: F5.4.5b — Refinamentos finais
+
+1. Animação suave do plan view ao trocar parâmetros (transitions CSS
+   nas posições xy de fairleads/anchors via React Spring ou framer).
+2. Painel de comparação multi-execução: overlay de plan views ou
+   tabela de deltas entre runs.
+3. Export do mooring system (formato `.moor` estendido ou JSON
+   próprio).
+4. PDF report do sistema (reaproveitando `pdf_report.py`).
