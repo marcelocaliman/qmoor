@@ -268,9 +268,11 @@ export function MooringSystemDetailPage() {
       <Topbar breadcrumbs={breadcrumbs} actions={actions} />
       <div className="flex-1 overflow-auto custom-scroll p-6">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
-          {/* Plan view */}
+          {/* Plan view — altura limitada (700px) em vez de aspect-
+              square, evita ocupar todo o espaço vertical e libera a
+              coluna direita para acomodar agregado + cards de linha. */}
           <Card className="overflow-hidden">
-            <CardContent className="aspect-square p-3">
+            <CardContent className="h-[700px] p-3">
               <MooringSystemPlanView
                 result={latestResult}
                 platformRadius={data.input.platform_radius}
@@ -281,56 +283,61 @@ export function MooringSystemDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Aggregate metrics */}
-          <Card>
-            <CardContent className="space-y-3 p-4">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                Resultado agregado
-              </h3>
-              {latestResult ? (
-                <AggregateMetrics result={latestResult} />
-              ) : (
-                <div className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
-                  <p>
-                    Nenhuma execução registrada. Clique em{' '}
-                    <strong>Resolver</strong> para calcular.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+          {/* Coluna direita: agregado + cards de linha empilhados.
+              A coluna inteira tem altura 700px (mesma do plan view)
+              com overflow vertical, mantendo lado a lado. */}
+          <div className="flex h-[700px] flex-col gap-3 overflow-y-auto pr-1">
+            <Card className="shrink-0">
+              <CardContent className="space-y-3 p-4">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Resultado agregado
+                </h3>
+                {latestResult ? (
+                  <AggregateMetrics result={latestResult} />
+                ) : (
+                  <div className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
+                    <p>
+                      Nenhuma execução registrada. Clique em{' '}
+                      <strong>Resolver</strong> para calcular.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* Lines — grid de cards (substituindo a tabela compacta).
-            Cada card mostra geometria + tração + utilização + alerts
-            de uma linha individual; layout responsivo (1/2/3 colunas
-            conforme largura). Sincronizado com o equilíbrio corrente
-            quando o usuário interage com os controles abaixo. */}
-        <div className="mt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Linhas ({data.input.lines.length})
-              {equilibrium && (
-                <span className="ml-2 normal-case text-[10px] text-primary">
-                  · valores do equilíbrio aplicado
+            {/* Cards por linha empilhados (1 coluna, coluna direita
+                é estreita). Sincronizados com equilibrium quando
+                aplicado — engenheiro vê todas as linhas mudando ao
+                mover o slider do watchcircle ou aplicar carga. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Linhas ({data.input.lines.length})
                 </span>
-              )}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {data.input.lines.map((line, idx) => {
-              // Prioridade: equilibrium (se carga aplicada) > latest result.
-              const sourceLines = equilibrium?.lines ?? latestResult?.lines
-              const lr = sourceLines?.[idx]
-              return (
-                <MooringLineMetricsCard
-                  key={line.name}
-                  lineSpec={line as unknown as import('@/api/types').SystemLineSpec}
-                  result={lr ?? undefined}
-                  paletteIndex={idx}
-                />
-              )
-            })}
+                {equilibrium && (
+                  <span className="text-[10px] text-primary">
+                    valores do equilíbrio
+                  </span>
+                )}
+              </div>
+              <div className="space-y-3">
+                {data.input.lines.map((line, idx) => {
+                  const sourceLines =
+                    equilibrium?.lines ?? latestResult?.lines
+                  const lr = sourceLines?.[idx]
+                  return (
+                    <MooringLineMetricsCard
+                      key={line.name}
+                      lineSpec={
+                        line as unknown as import('@/api/types').SystemLineSpec
+                      }
+                      result={lr ?? undefined}
+                      paletteIndex={idx}
+                    />
+                  )
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
